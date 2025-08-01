@@ -1,0 +1,68 @@
+#version 430
+
+layout (rgba32f, binding = 0) uniform readonly image2D displacement;
+layout (rgba16f, binding = 1) uniform writeonly image2D gradients;
+layout (r32f, binding = 2) uniform readonly image2D accfoam1;		// read
+layout (r32f, binding = 3) uniform writeonly image2D accfoam2;		// write
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+uniform float t;
+uniform float persistenceFactor;
+
+
+void main()
+{
+	ivec2 loc = ivec2(gl_GlobalInvocationID.xy);
+
+	// J A C O B I A N //////////////////////////////////////////////////////////////
+
+	// position of the neighbours
+	ivec2 left			= (loc - ivec2(1, 0)) & (FFT_SIZE - 1);
+	ivec2 right			= (loc + ivec2(1, 0)) & (FFT_SIZE - 1);
+	ivec2 bottom		= (loc - ivec2(0, 1)) & (FFT_SIZE - 1);
+	ivec2 top			= (loc + ivec2(0, 1)) & (FFT_SIZE - 1);
+
+	// neighbours
+	vec3 disp_left		= imageLoad(displacement, left).xyz;
+	vec3 disp_right		= imageLoad(displacement, right).xyz;
+	vec3 disp_bottom	= imageLoad(displacement, bottom).xyz;
+	vec3 disp_top		= imageLoad(displacement, top).xyz;
+
+	vec2 gradient		= vec2(disp_left.y - disp_right.y, disp_bottom.y - disp_top.y);
+
+	// Calculation of partial derivatives
+	float corr = 1.0;	// 0.6
+	float dXdx = (disp_right.x - disp_left.x) * corr;
+	float dXdz = (disp_top.x - disp_bottom.x) * corr;
+	float dZdx = (disp_right.z - disp_left.z) * corr;
+	float dZdz = (disp_top.z - disp_bottom.z) * corr;
+
+	// Calculation of the Jacobian
+	float jacobian = (1.0 + dXdx) * (1.0 + dZdz) - dXdz * dZdx;
+	/* This Jacobian represents the factor by which the surface area is changed relative to the base plane surface.
+	A value greater than 1 indicates an expansion of the surface, while a value less than 1 indicates a compression. */
+
+	// NOTE: normals are in tangent space for now
+	imageStore(gradients, loc, vec4(gradient, PATCH_SIZE_X2_N, jacobian));
+
+	// F O A M //////////////////////////////////////////////////////////////////////
+
+	// Compute foam and its persistence (function of time)
+	float foam = imageLoad(accfoam1, loc).x;
+
+	// if surface is compressed, add foam
+	if (jacobian <= 0.9)
+		foam = 1.0;
+
+	// otherwise exponential decrease as a function of time
+	else if (foam > 0.0)
+		foam *= exp(-persistenceFactor * t);
+	// if value very small, set it to 0
+	if (foam < 0.01f)
+		foam = 0.0f;
+	// Check the value
+	foam = clamp(foam, 0.0, 1.0);
+	// and store it in the accumulation buffer
+	imageStore(accfoam2, loc, vec4(foam, 0.0, 0.0, 0.0));
+}
