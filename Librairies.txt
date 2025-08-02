@@ -1,0 +1,17 @@
+LIBRARIES TO ADD FOR SIMSHIP
+
+Opengl 4.6	...	for rendering (with shaders)
+glfw		...	for windows integration
+glad		...	for opengl extensions
+glm			...	mathematics
+assimp		...	3D model loading for rendering
+libigl		...	3D model loading for physics
+imgui		...	2D interface
+nanovg		...	2D drawing
+stb			...	for image loading
+freeimage	...	for image loading
+eigen		...	with libigl
+fftw3		...	for ocean spectral analysis
+pugixml		...	for the markup
+nova		...	for the positions of the sun
+clipper		...	for the contour of the ship
