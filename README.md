@@ -1,5 +1,5 @@
-# SImShip
-Full Motion of a Ship on a Cinematic-Quality Ocean Simulation.
+# SimShip
+Simulation of a ship moving on a cinematic-quality ocean.
 
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
