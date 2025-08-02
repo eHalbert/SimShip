@@ -808,7 +808,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.1f;
        // Rudders
         ship.PosRudder = vec3(-10.5f, -1.5f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                    // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 5.0f;
@@ -818,29 +818,29 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(20.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-20.0f, 0.0f, 0.0f);
         ship.nRudder = 2;
-        ship.Rudder1 = vec3(-20.361f, -2.24f, -2.53f);	    // Left
-        ship.Rudder2 = vec3(-20.361f, -2.24f, 2.53f);		// Right
+        ship.Rudder1 = vec3(-20.361f, -2.24f, -2.53f);
+        ship.Rudder2 = vec3(-20.361f, -2.24f, 2.53f);
         // Power
         ship.PosPower = vec3(-9.5f, -1.6f, 0.0f);
         ship.PowerPerf = 0.15f;
-        ship.PowerkW = 1000.0f;                             // kW
+        ship.PowerkW = 1000.0f;
         ship.MaxStaticThrust = 1000.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 300.0f;
         ship.PowerRpmIncrement = 30.f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(-4.46f, 11.237f, -5.63f);      // Left
-        ship.Chimney2 = vec3(-4.46f, 11.237f, 5.63f);       // Right
+        ship.Chimney1 = vec3(-4.46f, 11.237f, -5.63f);
+        ship.Chimney2 = vec3(-4.46f, 11.237f, 5.63f);
         ship.nPropeller = 2;
-        ship.Propeller1 = vec3(-17.724f, -3.40f, -2.5f);    // Left
-        ship.Propeller2 = vec3(-17.724f, -3.40, 2.50f);     // Right
+        ship.Propeller1 = vec3(-17.724f, -3.40f, -2.5f);
+        ship.Propeller2 = vec3(-17.724f, -3.40, 2.50f);
         ship.WakeWidth = 1.1f;
         ship.ThrustSound = "Resources/Sounds/Engine3.wav";
         // Bow thruster
         ship.HasBowThruster = true;
         ship.PosBowThruster = vec3(8.5f, -1.6f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
+        ship.BowThrusterPerf = 0.6f;
         ship.BowThrusterPowerW = 100000.0f;
         ship.BowThrusterStepMax = 5;
         ship.BowThrusterRpmMin = 0.0f;
@@ -894,7 +894,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.2f;
         // Rudders
         ship.PosRudder = vec3(-6.0f, -0.7f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 45;
         ship.RudderRotSpeed = 15.0f;
         ship.RudderLiftPerf = 0.3f;
@@ -904,34 +904,26 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(5.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-5.0f, 0.0f, 0.0f);
         ship.nRudder = 2;
-        ship.Rudder1 = vec3(-6.2f, 0.3f, -0.5f);		// Left
-        ship.Rudder2 = vec3(-6.2f, 0.3f, 0.5f);		    // Right
+        ship.Rudder1 = vec3(-6.2f, 0.3f, -0.5f);
+        ship.Rudder2 = vec3(-6.2f, 0.3f, 0.5f);
         // Power
         ship.PosPower = vec3(-6.5f, -0.7f, 0.0f);
         ship.PowerPerf = 0.1f;
-        ship.PowerkW = 67.1f;                           // 671 kW / 0.73575 = 887 CV
+        ship.PowerkW = 67.1f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 2500.0f;
         ship.PowerRpmIncrement = 400.f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(-6.7f, 0.1f, -1.7f);       // Left
-        ship.Chimney2 = vec3(-6.7f, 0.1f, 1.7);         // Right
+        ship.Chimney1 = vec3(-6.7f, 0.1f, -1.7f);
+        ship.Chimney2 = vec3(-6.7f, 0.1f, 1.7);
         ship.nPropeller = 2;
-        ship.Propeller1 = vec3(-5.7f, -0.45f, -0.5f);   // Left
-        ship.Propeller2 = vec3(-5.7f, -0.45f, 0.5f);    // Right
+        ship.Propeller1 = vec3(-5.7f, -0.45f, -0.5f);
+        ship.Propeller2 = vec3(-5.7f, -0.45f, 0.5f);
         ship.WakeWidth = 1.1f;
         ship.ThrustSound = "Resources/Sounds/Engine2.wav";
         // Bow thruster
         ship.HasBowThruster = true;
-        ship.PosBowThruster = vec3(4.5f, -0.7f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 1500.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmIncrement = 100.f;
-        ship.BowThrusterSound = "Resources/Sounds/Engine0.wav";
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
@@ -959,7 +951,7 @@ void LoadShips()
 
 #pragma region Doga
         // Names
-        ship.ShortName = "Doga";
+        ship.ShortName = "Trawler Doga";
         ship.PathnameHull = "Resources/Models/doga/doga_hull_sharp6.obj";
         ship.PathnameFull = "Resources/Models/doga/doga.gltf";
         ship.PathnamePropeller = "Resources/Models/doga/doga_propeller.glb";
@@ -976,7 +968,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.5f;
         // Rudders
         ship.PosRudder = vec3(-9.0f, -0.6f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 45;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 0.7f;
@@ -986,8 +978,8 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(8.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-8.0f, 0.0f, 0.0f);
         ship.nRudder = 2;
-        ship.Rudder1 = vec3(-9.0f, -0.2f, -0.75f);		// Left
-        ship.Rudder2 = vec3(-9.0f, -0.2f, 0.75f);		// Right
+        ship.Rudder1 = vec3(-9.0f, -0.2f, -0.75f);
+        ship.Rudder2 = vec3(-9.0f, -0.2f, 0.75f);
         // Power
         ship.PosPower = vec3(-8.2f, -0.75f, 0.0f);
         ship.PowerPerf = 0.08f;
@@ -997,22 +989,15 @@ void LoadShips()
         ship.PowerRpmMax = 400.0f;
         ship.PowerRpmIncrement = 50.0f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(2.37f, 3.7f, -1.73f);      // Left
-        ship.Chimney2 = vec3(2.37f, 3.7f, 1.73f);       // Right
+        ship.Chimney1 = vec3(2.37f, 3.7f, -1.73f); 
+        ship.Chimney2 = vec3(2.37f, 3.7f, 1.73f);
         ship.nPropeller = 2;
-        ship.Propeller1 = vec3(-8.5f, -0.8f, -0.75f);   // Left
-        ship.Propeller2 = vec3(-8.5f, -0.8f, 0.75f);    // Right
+        ship.Propeller1 = vec3(-8.5f, -0.8f, -0.75f);
+        ship.Propeller2 = vec3(-8.5f, -0.8f, 0.75f);
         ship.WakeWidth = 1.1f;
         ship.ThrustSound = "Resources/Sounds/Engine7.wav";
         // Bow thruster
         ship.HasBowThruster = false;
-        ship.PosBowThruster = vec3(9.0f, -1.6f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 10000.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmIncrement = 100.f;
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
@@ -1042,7 +1027,7 @@ void LoadShips()
 
 #pragma region Boga
         // Names
-        ship.ShortName = "Boga";
+        ship.ShortName = "Trawler Boga";
         ship.PathnameHull = "Resources/Models/boga/boga_hull.obj";
         ship.PathnameFull = "Resources/Models/boga/boga.gltf";
         ship.PathnamePropeller = "Resources/Models/boga/boga_propeller.glb";
@@ -1059,7 +1044,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.5f;
         // Rudders
         ship.PosRudder = vec3(-9.0f, -0.6f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 45;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 0.7f;
@@ -1069,7 +1054,7 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(8.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-8.0f, 0.0f, 0.0f);
         ship.nRudder = 1;
-        ship.Rudder1 = vec3(-8.5f, -0.1f, 0.0f);		// Centre
+        ship.Rudder1 = vec3(-8.5f, -0.1f, 0.0f);
         // Power
         ship.PosPower = vec3(-8.166f, -0.61f, 0.0f);
         ship.PowerPerf = 0.1f;
@@ -1079,20 +1064,14 @@ void LoadShips()
         ship.PowerRpmMax = 400.0f;
         ship.PowerRpmIncrement = 50.0f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(4.05f, 5.7f, -0.11f);      // Left
-        ship.Chimney2 = vec3(4.05f, 5.7f, 0.11f);       // Right
+        ship.Chimney1 = vec3(4.05f, 5.7f, -0.11f);
+        ship.Chimney2 = vec3(4.05f, 5.7f, 0.11f);
         ship.nPropeller = 1;
-        ship.Propeller1 = vec3(-8.166f, -0.61f, 0.0f);  // Centre
+        ship.Propeller1 = vec3(-8.166f, -0.61f, 0.0f);
         ship.WakeWidth = 1.1f;
         ship.ThrustSound = "Resources/Sounds/Engine7.wav";
         // Bow thruster
         ship.HasBowThruster = false;
-        ship.PosBowThruster = vec3(9.0f, -1.6f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 10000.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
         // Lights
         ship.BowThrusterRpmIncrement = 100.f;
         ship.LightPositions.clear();
@@ -1123,7 +1102,7 @@ void LoadShips()
 
 #pragma region Jang Bogo
         // Names
-        ship.ShortName = "Jang Bogo";
+        ship.ShortName = "Submarine Jang Bogo";
         ship.PathnameHull = "Resources/Models/jang_bogo/jang_bogo_hull.obj";
         ship.PathnameFull = "Resources/Models/jang_bogo/jang_bogo.gltf";
         ship.PathnamePropeller = "Resources/Models/jang_bogo/jang_bogo_propeller.gltf";
@@ -1139,15 +1118,15 @@ void LoadShips()
         ship.EnvMapfactor = 0.1f;
         // Rudders
         ship.PosRudder = vec3(-24.022f, -2.4748f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                    // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 5.0f;
-        ship.RudderDragPerf = 10.0f;
+        ship.RudderDragPerf = 1.0f;
         ship.TurningDragPerf = 1.0f;
-        ship.CentrifugalPerf = 3.0f;
-        ship.RudderPivotFwd = vec3(20.0f, 0.0f, 0.0f);
-        ship.RudderPivotBwd = vec3(-20.0f, 0.0f, 0.0f);
+        ship.CentrifugalPerf = 0.0f;
+        ship.RudderPivotFwd = vec3(10.0f, 0.0f, 0.0f);
+        ship.RudderPivotBwd = vec3(-10.0f, 0.0f, 0.0f);
         ship.nRudder = 1;
         ship.Rudder1 = vec3(-24.022f, -2.4748f, 0.0f);
         // Power
@@ -1166,14 +1145,6 @@ void LoadShips()
         ship.ThrustSound = "Resources/Sounds/Engine3.wav";
         // Bow thruster
         ship.HasBowThruster = false;
-        ship.PosBowThruster = vec3(8.5f, -1.6f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 100000.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmIncrement = 100.f;
-        ship.BowThrusterSound = "Resources/Sounds/Engine0.wav";
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
@@ -1190,9 +1161,9 @@ void LoadShips()
         // Autopilot
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
-        ship.BaseD = 10.0f;
-        ship.MaxIntegral = 5.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
+        ship.BaseD = 5.0f;
+        ship.MaxIntegral = 3.0f;	// Limit of the integral to avoid runaway
+        ship.SpeedFactor = 3.0f;	// Factor to adjust the influence of speed
         ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
         ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
         ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
@@ -1219,7 +1190,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.1f;
         // Rudders
         ship.PosRudder = vec3(-28.0f, -2.4f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 1.5f;
@@ -1229,23 +1200,23 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(20.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-20.0f, 0.0f, 0.0f);
         ship.nRudder = 2;
-        ship.Rudder1 = vec3(-27.2f, -1.65f, -1.43f);	// Left
-        ship.Rudder2 = vec3(-27.2f, -1.65f, 1.43f);		// Right
+        ship.Rudder1 = vec3(-27.2f, -1.65f, -1.43f);
+        ship.Rudder2 = vec3(-27.2f, -1.65f, 1.43f);
         // Power
         ship.PosPower = vec3(-25.0f, -2.4f, 0.0f);
         ship.PowerPerf = 0.1f;
-        ship.PowerkW = 2000.0f;	                        // kW
+        ship.PowerkW = 2000.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 500.0f;
         ship.PowerRpmIncrement = 50.f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(-11.994f, 5.3264f, -1.0294f);      // Left
-        ship.Chimney2 = vec3(-11.994f, 5.3264f, 1.0294f);       // Right
+        ship.Chimney1 = vec3(-11.994f, 5.3264f, -1.0294f);
+        ship.Chimney2 = vec3(-11.994f, 5.3264f, 1.0294f);
         ship.nPropeller = 3;
-        ship.Propeller1 = vec3(-25.3f, -2.45f, -2.3f);  // Left
-        ship.Propeller2 = vec3(-25.3f, -2.45f, 2.3f);   // Right
-        ship.Propeller3 = vec3(-25.3f, -2.75f, 0.0f);   // Centre
+        ship.Propeller1 = vec3(-25.3f, -2.45f, -2.3f);
+        ship.Propeller2 = vec3(-25.3f, -2.45f, 2.3f);
+        ship.Propeller3 = vec3(-25.3f, -2.75f, 0.0f);
         ship.WakeWidth = 1.2f;
         ship.ThrustSound = "Resources/Sounds/Engine6.wav";
         // Bow thruster
@@ -1291,7 +1262,7 @@ void LoadShips()
 
 #pragma region Cargo
         // Names
-        ship.ShortName = "Cargo";
+        ship.ShortName = "Cargo bulk carrier";
         ship.PathnameHull = "Resources/Models/cargo/cargo_sharp6.obj";
         ship.PathnameFull = "Resources/Models/cargo/cargo.gltf";
         ship.PathnamePropeller = "Resources/Models/cargo/cargo_propeller.glb";
@@ -1308,7 +1279,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.25f;
         // Rudders
         ship.PosRudder = vec3(-44.0f, -2.4f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 10.0f;
         ship.RudderLiftPerf = 3.5f;
@@ -1318,19 +1289,19 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(30.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-25.0f, 0.0f, 0.0f);
         ship.nRudder = 1;
-        ship.Rudder1 = vec3(-43.5f, -0.5f,0.0f);		// Centre
+        ship.Rudder1 = vec3(-43.5f, -0.5f,0.0f);
         // Power
         ship.PosPower = vec3(-42.5f, -2.8f, 0.0f);
         ship.PowerPerf = 0.17f;
-        ship.PowerkW = 1600.0f;	                        // kW
+        ship.PowerkW = 1600.0f;	
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 200.0f;
         ship.PowerRpmIncrement = 14.0f;
         ship.nChimney = 1;
-        ship.Chimney1 = vec3(-40.8f, 12.0f, 0.0f);      // Centre
+        ship.Chimney1 = vec3(-40.8f, 12.0f, 0.0f); 
         ship.nPropeller = 1;
-        ship.Propeller1 = vec3(-41.7f, -2.8f, 0.0f);    // Centre
+        ship.Propeller1 = vec3(-41.7f, -2.8f, 0.0f); 
         ship.WakeWidth = 0.7f;
         ship.ThrustSound = "Resources/Sounds/Engine10.wav";
         // Bow thruster
@@ -1392,13 +1363,13 @@ void LoadShips()
         ship.EnvMapfactor = 0.25f;
         // Rudders
         ship.PosRudder = vec3(-62.401f, -2.5f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 10.0f;
-        ship.RudderLiftPerf = 3.5f;
-        ship.RudderDragPerf = 10.0f;
+        ship.RudderLiftPerf = 2.0f;
+        ship.RudderDragPerf = 5.0f;
         ship.TurningDragPerf = 0.5f;
-        ship.CentrifugalPerf = 15.0f;
+        ship.CentrifugalPerf = 20.0f;
         ship.RudderPivotFwd = vec3(49.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-44.0f, 0.0f, 0.0f);
         ship.nRudder = 2;
@@ -1407,7 +1378,7 @@ void LoadShips()
         // Power
         ship.PosPower = vec3(-59.0f, -3.56f, 0.0f);
         ship.PowerPerf = 0.065f;
-        ship.PowerkW = 20000.0f;	                        // kW
+        ship.PowerkW = 20000.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 200.0f;
@@ -1422,14 +1393,6 @@ void LoadShips()
         ship.ThrustSound = "Resources/Sounds/Engine10.wav";
         // Bow thruster
         ship.HasBowThruster = false;
-        ship.PosBowThruster = vec3(32.0f, -4.0f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 240000.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmIncrement = 100.f;
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
@@ -1463,7 +1426,7 @@ void LoadShips()
 
 #pragma region Spyrosk
         // Names
-        ship.ShortName = "Spyrosk";
+        ship.ShortName = "Tanker Spyrosk";
         ship.PathnameHull = "Resources/Models/spyrosk/spyrosk_sharp7.obj";
         ship.PathnameFull = "Resources/Models/spyrosk/spyrosk.gltf";
         ship.PathnamePropeller = "Resources/Models/spyrosk/spyrosk_propeller.glb";
@@ -1480,7 +1443,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.1f;
         // Rudders
         ship.PosRudder = vec3(-133.0f, -4.15f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                    // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 2.8f;
         ship.RudderLiftPerf = 10.0f;
@@ -1490,20 +1453,20 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(100.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-100.0f, 0.0f, 0.0f);
         ship.nRudder = 1;
-        ship.Rudder1 = vec3(-131.6f, -0.025f, 0.0f);	    // Centre
+        ship.Rudder1 = vec3(-131.6f, -0.025f, 0.0f);
         // Power
         ship.PosPower = vec3(-127.0f, -7.0f, 0.0f);
         ship.PowerPerf = 0.2f;
-        ship.PowerkW = 18235.0f;	                        // kkW
+        ship.PowerkW = 18235.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 90.0f;
         ship.PowerRpmIncrement = 1.0f;
         ship.nChimney = 2;
-        ship.Chimney1 = vec3(-118.0f, 31.1f, -1.4f);        // Left
-        ship.Chimney2 = vec3(-118.0f, 31.1f, 1.4f);         // Right
+        ship.Chimney1 = vec3(-118.0f, 31.1f, -1.4f); 
+        ship.Chimney2 = vec3(-118.0f, 31.1f, 1.4f);
         ship.nPropeller = 1;
-        ship.Propeller1 = vec3(-127.0f, -7.0f, 0.0f);       // Centre
+        ship.Propeller1 = vec3(-127.0f, -7.0f, 0.0f);
         ship.WakeWidth = 0.3f;
         ship.ThrustSound = "Resources/Sounds/Engine13.wav";
         // Bow thruster
@@ -1565,7 +1528,7 @@ void LoadShips()
         ship.EnvMapfactor = 0.05f;
         // Rudders
         ship.PosRudder = vec3(-135.32f, -2.24f, 0.0f);
-        ship.RudderIncrement = 1.0f;	                    // Degrees
+        ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
         ship.RudderRotSpeed = 2.8f;
         ship.RudderLiftPerf = 15.0f;
@@ -1575,38 +1538,30 @@ void LoadShips()
         ship.RudderPivotFwd = vec3(100.0f, 0.0f, 0.0f);
         ship.RudderPivotBwd = vec3(-100.0f, 0.0f, 0.0f);
         ship.nRudder = 1;
-        ship.Rudder1 = vec3(-135.36, -2.25f, 0.0f);	        // Centre
+        ship.Rudder1 = vec3(-135.36, -2.25f, 0.0f);
         // Power
         ship.PosPower = vec3(-131.0f, -12.4f, 0.0f);
         ship.PowerPerf = 0.15f;
-        ship.PowerkW = 27160.0f;	                        // kkW
+        ship.PowerkW = 27160.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 80.0f;
         ship.PowerRpmIncrement = 1.0f;
         ship.nChimney = 1;
-        ship.Chimney1 = vec3(-111.17f, 50.906f, 0.0f);      // Left
-        ship.Chimney2 = vec3(-111.17f, 50.906f, 0.0f);      // Right
+        ship.Chimney1 = vec3(-111.17f, 50.906f, 0.0f);
+        ship.Chimney2 = vec3(-111.17f, 50.906f, 0.0f);
         ship.nPropeller = 1;
-        ship.Propeller1 = vec3(-131.33f, -12.395f, 0.0f);   // Centre
+        ship.Propeller1 = vec3(-131.33f, -12.395f, 0.0f);
         ship.WakeWidth = 0.3f;
         ship.ThrustSound = "Resources/Sounds/Engine14.wav";
         // Bow thruster
         ship.HasBowThruster = false;
-        ship.PosBowThruster = vec3(23.0f, -2.0f, 0.0f);
-        ship.BowThrusterPerf = 0.4f;
-        ship.BowThrusterPowerW = 0.0f;
-        ship.BowThrusterStepMax = 5;
-        ship.BowThrusterRpmMin = 0.0f;
-        ship.BowThrusterRpmMax = 500.0f;
-        ship.BowThrusterRpmMax = 500.0f;    
-        ship.BowThrusterRpmIncrement = 100.f;
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
-        ship.LightPositions.push_back(vec3(-70.918f, 44.0f, -27.636f));   // Red
+        ship.LightPositions.push_back(vec3(-70.918f, 44.0f, -27.636f));     // Red
         ship.LightColors.push_back(vec3(1.0f, 0.0f, 0.0f));
-        ship.LightPositions.push_back(vec3(-70.918f, 44.0f, 27.636f));    // Green
+        ship.LightPositions.push_back(vec3(-70.918f, 44.0f, 27.636f));      // Green
         ship.LightColors.push_back(vec3(0.0f, 1.0f, 0.0f));
         ship.LightPositions.push_back(vec3(-141.43f, 10.093f, 0.0f));       // White stern
         ship.LightColors.push_back(vec3(1.0f, 1.0f, 1.0f));
@@ -2096,7 +2051,6 @@ void RenderImGui()
                     if (isPhysics)
                     {
                         g_Ship->bMotion = true;
-                        g_Ship->SetForces(true);
                         g_Ship->Rendering = eRendering::TRIANGLES;
                         g_Ship->bWireframe = true;
                         g_Ship->bOutline = true;
@@ -2109,7 +2063,6 @@ void RenderImGui()
                     else
                     {
                         g_Ship->bMotion = true;
-                        g_Ship->SetForces(true);
                         g_Ship->Rendering = eRendering::SUN;
                         g_Ship->bWireframe = false;
                         g_Ship->bOutline = false;

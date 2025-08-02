@@ -283,22 +283,21 @@ void Ship::Init(sShip& ship, Camera& camera)
     mSoundPower->adjustDistances();
     if (bSound)
         mSoundPower->play();
-    mSoundBowThruster = make_unique<Sound>(ship.BowThrusterSound);
-    mSoundBowThruster->setVolume(0.25f);
-    mSoundBowThruster->setPosition(ship.Position + ship.PosBowThruster);
-    mSoundBowThruster->setLooping(true);
-    mSoundBowThruster->adjustDistances();
+    if (ship.HasBowThruster)
+    {
+        mSoundBowThruster = make_unique<Sound>(ship.BowThrusterSound);
+        mSoundBowThruster->setVolume(0.25f);
+        mSoundBowThruster->setPosition(ship.Position + ship.PosBowThruster);
+        mSoundBowThruster->setLooping(true);
+        mSoundBowThruster->adjustDistances();
+    }
 
     // Particles
 	mSmokeLeft = make_unique<Smoke>();
     if (this->ship.nChimney == 2) mSmokeRight = make_unique<Smoke>();
 
     ResetVelocities();
-
-    // Forces
     bMotion = false;
-    SetForces(true);
-
     bSound = true;
 }
 void Ship::SetOcean(Ocean* ocean)
@@ -533,27 +532,6 @@ void Ship::CreatePressureLinesVAO()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
 
     glEnableVertexAttribArray(0);
-}
-void Ship::SetForces(bool bActive)
-{
-    // Buoyancy
-    Archimede.bActive = bActive;
-    Gravity.bActive = bActive;
-    ResistanceHeave.bActive = bActive;
-    // Power
-    Thrust.bActive = bActive;
-    ResistanceViscous.bActive = bActive;
-    ResistanceWaves.bActive = bActive;
-    ResistanceResidual.bActive = bActive;
-    BowThrust.bActive = bActive;
-    // Rudder
-    RudderLift.bActive = bActive;
-    RudderDrag.bActive = bActive;
-    Centrifugal.bActive = bActive;
-    // Wind
-    WindRotation.bActive = bActive;
-    WindFront.bActive = bActive;
-    WindRear.bActive = bActive;
 }
 
 // Contour
@@ -1399,6 +1377,9 @@ void Ship::ComputeResistanceResidual(float dt)
 }
 void Ship::ComputeBowThrust(float dt)
 {
+    if (!ship.HasBowThruster)
+        return;
+
     // Force as a result of the bow thruster
 
     float limitRpm = 0.0f;
@@ -1608,7 +1589,8 @@ void Ship::ComputeForces(float dt)
 
     // Forces of rotation
     YawAcceleration = 0.0f;
-    YawAcceleration -= BowThrust.Magnitude * fabs(mStern.x) / Iyy;
+    if (ship.HasBowThruster)
+        YawAcceleration -= BowThrust.Magnitude * fabs(mStern.x) / Iyy;
     YawAcceleration += RudderLift.Magnitude * (fabs(ship.PosRudder.x)) / Iyy;
     YawAcceleration += WindRotation.Magnitude * (mLength * 0.5f) / Iyy;
 
@@ -1630,7 +1612,7 @@ void Ship::ComputeForces(float dt)
 
     // Displacements (Bow thrust & Rudder lift)
     float dLat = 0.0f;
-    if (BowThrust.Magnitude != 0.0f)
+    if (ship.HasBowThruster && BowThrust.Magnitude != 0.0f)
         dLat += mStern.x * sin(YawVelocity * dt); 
     if (RudderLift.Magnitude != 0.0f)
         dLat += -ship.PosRudder.x * sin(YawVelocity * dt) * 0.5f;
@@ -1803,25 +1785,28 @@ void Ship::ComputeAutopilot(float dt)
 void Ship::UpdateSounds()
 {   
     mSoundPower->setPosition(TransformPosition(ship.PosPower));
-    mSoundBowThruster->setPosition(TransformPosition(ship.PosBowThruster));
-    if (!mbSoundBowThrusterPlaying)
+    if (ship.HasBowThruster)
     {
-        if (BowThrusterRpm != ship.BowThrusterRpmMin)
+        mSoundBowThruster->setPosition(TransformPosition(ship.PosBowThruster));
+        if (!mbSoundBowThrusterPlaying)
         {
-            alGetError(); // clear error state
-            mSoundBowThruster->play();
-            ALenum error;
-            if ((error = alGetError()) != AL_NO_ERROR)
-                cout << "alSourcef 0 AL_PITCH : " << error << endl;
-            mbSoundBowThrusterPlaying = true;
+            if (BowThrusterRpm != ship.BowThrusterRpmMin)
+            {
+                alGetError(); // clear error state
+                mSoundBowThruster->play();
+                ALenum error;
+                if ((error = alGetError()) != AL_NO_ERROR)
+                    cout << "alSourcef 0 AL_PITCH : " << error << endl;
+                mbSoundBowThrusterPlaying = true;
+            }
         }
-    }
-    else
-    {
-        if (BowThrusterRpm == ship.BowThrusterRpmMin)
+        else
         {
-            mSoundBowThruster->pause();
-            mbSoundBowThrusterPlaying = false;
+            if (BowThrusterRpm == ship.BowThrusterRpmMin)
+            {
+                mSoundBowThruster->pause();
+                mbSoundBowThrusterPlaying = false;
+            }
         }
     }
 
@@ -1829,13 +1814,14 @@ void Ship::UpdateSounds()
     if (!bVisible || !bSound)
     {
         mSoundPower->pause();
-        mSoundBowThruster->pause();
+        if (ship.HasBowThruster)
+            mSoundBowThruster->pause();
         bPause = true;
     }
     if (bVisible && bSound && bPause)
     {
         mSoundPower->play();
-        if (BowThrusterRpm != ship.BowThrusterRpmMin)
+        if (ship.HasBowThruster && BowThrusterRpm != ship.BowThrusterRpmMin)
             mSoundBowThruster->play();
         bPause = false;
     }
@@ -1962,6 +1948,7 @@ void Ship::UpdateWakeVao()
     {
         sFoamPts sfp;
         sfp.pos = TransformPosition(mWakePivot);
+        sfp.pos.y = 1.0f;
         sfp.time = glfwGetTime();
         vWakePoints.push_back(sfp);
         // Cleaning to not exceed a limit
@@ -1972,6 +1959,7 @@ void Ship::UpdateWakeVao()
     // Temporarily adds the current position
     sFoamPts sfp;
     sfp.pos = TransformPosition(mWakePivot);
+    sfp.pos.y = 1.0f;
     sfp.time = glfwGetTime();
     vWakePoints.push_back(sfp);
 

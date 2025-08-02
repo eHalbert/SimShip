@@ -50,10 +50,10 @@ struct sTriangle
 	int			I[3];								// Indices of the face
 	int			bUnder[3];							// Status relative to water height
 	int			WaterStatus;						// 0 = under, 3 = above, 1 or 2 = new triangles
-	vec3		Color = vec3(0.0f, 0.0f, 0.0f);		// Color of the triangle in debug mode
-	float		Area = 0.0f;						// Total area
-	vec3		CoG = vec3(0.0f, 0.0f, 0.0f);		// Centre of gravity
-	vec3		Normal = vec3(0.0f, 0.0f, 0.0f);	// Normal vector
+	vec3		Color	= vec3(0.0f, 0.0f, 0.0f);	// Color of the triangle in debug mode
+	float		Area	= 0.0f;						// Total area
+	vec3		CoG		= vec3(0.0f, 0.0f, 0.0f);	// Centre of gravity
+	vec3		Normal	= vec3(0.0f, 0.0f, 0.0f);	// Normal vector
 
 	float		Depth;								// Profondeur
 	vec3		vPressure;							// Vecteur force de pression
@@ -65,23 +65,22 @@ struct sSegment
 };
 struct sForce
 {
-	float		Magnitude = 0.0f;
-	vec3		Vector = vec3(0.0f);
-	vec3		Position = vec3(0.0f);
-	bool		bActive = true;
+	float		Magnitude	= 0.0f;
+	vec3		Vector		= vec3(0.0f);
+	vec3		Position	= vec3(0.0f);
 };
 enum eRendering { TRIANGLES = 0, BASIC_LIGHT, SUN };
 
 struct sFoamPts
 {
-	vec3	pos;  
-	float   time;
+	vec3		pos;		// Series of points for the wake	
+	float		time;		// Time of creation (for alpha fading)
 };
 struct sFoamVertex
 {
-	vec3	pos;      // Position 3D du sommet
-	vec2	uv;       // Coordonnée dans la texture
-	float   alpha;
+	vec3		pos;		// Position 3D du sommet
+	vec2		uv;			// Coordonnée dans la texture
+	float		alpha;
 };
 
 class Ship
@@ -92,7 +91,6 @@ public:
 
 	void	Init(sShip& ship, Camera& camera);
 	void	SetOcean(Ocean* ocean);
-	void	SetForces(bool bActive);
 	void	SetMass() { mMass = ship.Mass_t * 1000.0f; }
 	float	GetLength() { return mLength; }
 	void	ResetVelocities();

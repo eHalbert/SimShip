@@ -185,7 +185,7 @@ void Texture::SetWrappingParams(GLint wrap_r, GLint wrap_s)
     glTextureParameteri(id, GL_TEXTURE_WRAP_R, wrap_r);
     glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap_s);
 }
-unsigned int LoadCubemapWith6Faces(vector<string> faces)
+unsigned int Texture::LoadCubemapWith6Faces(vector<string> faces)
 {
     unsigned int textureID;
     glGenTextures(1, &textureID);

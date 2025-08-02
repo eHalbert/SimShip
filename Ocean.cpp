@@ -12,7 +12,7 @@
 #include <random>
 
 // freeimage
-#include <freeimage/FreeImage.h>
+//#include <freeimage/FreeImage.h>
 
 // For spectrum study
 bool bStats = true;
