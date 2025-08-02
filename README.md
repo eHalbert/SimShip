@@ -45,7 +45,7 @@ Simulation of a ship moving on a cinematic-quality ocean.
 - 3D sounds (engines, seagulls, horn).
 - Terrain (island).
 - Markup (buoys).
-- 
+
 # Compilation
 
 - Only the important files are provided. Compilation needs the installation of several librairies. See the file Libraries.txt.
