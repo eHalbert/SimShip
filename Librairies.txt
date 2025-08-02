@@ -9,11 +9,13 @@ LIBRARIES TO ADD FOR SIMSHIP
 - eigen		...	with libigl
 - imgui		...	2D interface
 - nanovg		...	2D drawing
-- stb			...	for image loading
+- stb			...	for image handling
+- gli  ... for dds images handling
 - freeimage	...	for image handling
 - fftw3		...	for ocean spectral analysis
 - pugixml		...	for the markup
 - nova		...	for the positions of the sun
 - MeshPlaneIntersect ... for the contour of the ship
 - clipper		...	for the contour of the ship
+
 
