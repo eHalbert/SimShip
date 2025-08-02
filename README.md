@@ -1,7 +1,7 @@
 # SimShip
 Full Motion of a Ship on a Cinematic-Quality Ocean Simulation.
 
-PHILOSOPHY
+# PHILOSOPHY
 
 - No commercial or freeware 3D engine.
 - Simulation written in C++ with Opengl, glfw, glad, glm, assimp, libigl,imgui, nanovg, stb, freeimage, eigen, fftw3, pugixml, nova, clipper.
@@ -9,7 +9,7 @@ PHILOSOPHY
 - The rendering of the 3D scene is optimized to ensure consistency of visual quality between all elements: ocean, ship, sky, clouds, terrain, mist or fog effects.
 
 
-OCEAN
+# OCEAN
 
 - Spectral wind wave model, based on Phillips spectrum.
 - Dynamic PBR anisotropic BRDF.
@@ -19,17 +19,17 @@ OCEAN
 - Host readbacks for in-game physics.
 - Spectral analysis.
 
-WIND
+# WIND
 
 - Strength (1 to 30 knots) and direction.
 
-SKY
+# SKY
 
 - Dynamic sky (physical atmosphere) with moving volumetric clouds, godrays and bloom.
 - Sun positioned according to date and time (day and night).
 - Mist and Fog.
 
-SHIP
+# SHIP
 
 - Full motion over 6 degrees of freedom (surge, sway, heave, yaw, pitch, roll).
 - Ship motion forces (archimede, gravity, viscous resistance, wave resistance, residual resistance, wind drift, wind rotation, thuster, bow thruster, rudder).
@@ -40,7 +40,7 @@ SHIP
 - Navigation lights.
 - Autopilot with Proportional-Integral-Derivative controller.
 
-ENVIRONMENT
+# ENVIRONMENT
 
 - Camera full smooth motion (orbital around the ship, fps, fixed views and free views on board the ship).
 - 3D sounds (engines, seagulls, horn).
