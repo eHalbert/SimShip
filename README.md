@@ -1,8 +1,6 @@
 # SimShip
 Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.com/watch?v=ywmwANNGrns&ab_channel=EdouardHalbert)
 
-*[The code (C++ and shaders) is complete but without a cmake file. Not all resource files are present. All libraries must be included.]*
-
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
 - Simulation written in C++ with OpenGL, GLFW, Glad, glm, Open Asset Import Library (assimp), libigl, ImGui, OpenAL, NanoVG, stb, FreeImage, Eigen, FFTW3, pugixml, libnova, Clipper2.
@@ -50,7 +48,7 @@ Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.c
 
 # Compilation
 
-- Only the important files are provided. Compilation needs the installation of several librairies. See the file Libraries.txt.
+- Only c++ files and shaders are provided with some resource files. Compilation needs the installation of several librairies.
 
 # License
 
