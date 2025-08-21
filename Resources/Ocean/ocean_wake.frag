@@ -2,21 +2,21 @@
 
 #define ONE_OVER_4PI	0.0795774715459476
 
-uniform samplerCube	envmap;
-uniform sampler2D	gradients;
-uniform sampler2D	foamBuffer;
-uniform sampler2D	foamDesign;
-uniform sampler2D	foamBubbles;
-uniform sampler2D	foamTexture;
-uniform sampler2D	contourShip;
-uniform sampler2D	reflectionTexture;
-uniform sampler2D	waterDUDV;
-uniform sampler2D	wakeBuffer;
+layout(binding = 1) uniform samplerCube	envmap;
+layout(binding = 2) uniform sampler2D	gradients;
+layout(binding = 3) uniform sampler2D	foamBuffer;
+layout(binding = 4) uniform sampler2D	foamDesign;
+layout(binding = 5) uniform sampler2D	foamBubbles;
+layout(binding = 6) uniform sampler2D	foamTexture;
+layout(binding = 7) uniform sampler2D	contourShip;
+layout(binding = 8) uniform sampler2D	reflectionTexture;
+layout(binding = 9) uniform sampler2D	waterDUDV;
+layout(binding = 10) uniform sampler2D	wakeBuffer;
 
 in vec3		vdir;
 in vec2		tex;
 in vec3		vertex;
-flat in int lod;
+in float	vFoamIntensity;
 
 uniform vec3	oceanColor;
 uniform float	transparency;
@@ -35,10 +35,9 @@ uniform vec2	wakeSize;
 uniform bool	bShowPatch;
 
 uniform float	time;
-uniform bool	bAttenuationFresnel;
 uniform bool	bWake;
 
-out vec4 my_FragColor;
+out vec4 FragColor;
 
 
 vec2 RotatePoint(vec2 point, vec2 pivot, float angle) 
@@ -49,6 +48,23 @@ vec2 RotatePoint(vec2 point, vec2 pivot, float angle)
     vec2 rotated = vec2( translated.x * c - translated.y * s, translated.x * s + translated.y * c );
     return rotated + pivot;
 }
+vec4 ComputeFoam(vec2 uv, float factor)
+{
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+
+	// Extract only the white component of the foam texture
+	vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
+	float foamWhiteness = max(foamTexture.r, max(foamTexture.g, foamTexture.b));
+			
+	// Extract the drawing from the foam
+	vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
+	vec4 foamColor = vec4(1.0) * (1.0 + factor * foamBubblesTexture);
+			
+	// Mix the original color with the white foam
+	return mix(FragColor, foamColor, foamWhiteness * factor);
+}
+
 void main()
 {
 	// Vectors
@@ -62,11 +78,8 @@ void main()
 	float F = F0 + (1.0 - F0) * pow(1.0 - dot(N, R), 5.0);
 	
 	// Less Fresnel effect if far away
-	if (bAttenuationFresnel)
-	{
-		float dist = length(eyePos - vertex);
-		F *= exp(-0.001 * dist);
-	}
+	float dist = length(eyePos - vertex);
+	F *= exp(-0.001 * dist);
 
 	// No Fresnel effect if underwater
 	if (eyePos.y < 0.0) 
@@ -83,6 +96,7 @@ void main()
 
 	// Reflection of the ship
 	vec2 screenCoords = gl_FragCoord.xy / textureSize(reflectionTexture, 0);
+	
 	// Noise for the reflection of the ship
 	float grain = 10.0;
 	vec2 distortion1 = texture(waterDUDV, vec2(tex.x + time, tex.y) * grain).rg * 2.0 - 1.0;
@@ -119,37 +133,23 @@ void main()
 	}
 
 	// Final color
-	my_FragColor = vec4(mix(oceanColor, reflection * color_mod, F) + sunColor * spec, 0.75);
+	FragColor = vec4(mix(oceanColor, reflection * color_mod, F) + sunColor * spec, 0.75);
 
 	// Transparent above, opaque at the edge
-	my_FragColor.a = 1.0 - abs(dot(N, R)) * transparency;
+	FragColor.a = 1.0 - abs(dot(N, R)) * transparency;
 
 	// The highest waves are greener and more transparent
 	vec3 greenHighlight = vec3(0.0, 0.6, 0.4);	// Green
 	const float sprayThresholdLower = 0.0;
 	const float sprayThresholdUpper = 4.0;
 	float heightFactor = smoothstep(sprayThresholdLower, sprayThresholdUpper, vertex.y);
-	my_FragColor.rgb = mix(my_FragColor.rgb, greenHighlight, heightFactor);
-	my_FragColor.a *= (1.0 - 0.5 * heightFactor);
+	FragColor.rgb = mix(FragColor.rgb, greenHighlight, heightFactor);
+	FragColor.a *= (1.0 - 0.5 * heightFactor);
 
 	// Foam
-	float foamFactor = texture(foamBuffer, tex).r;
-	if (foamFactor > 0.0)
-	{
-		vec2 dx = dFdx(tex);
-		vec2 dy = dFdy(tex);
-
-		// Extract only the white component of the foam texture
-		vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
-		float foamWhiteness = 1.5 * smoothstep(0.1, 1.0, max(foamTexture.r, max(foamTexture.g, foamTexture.b)));
-
-		// Extract the drawing from the foam
-		vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
-		vec4 foamColor = vec4(1.0) * (1.0 + foamFactor * foamBubblesTexture);
-
-		// Mix the original color with the white foam
-		my_FragColor = mix(my_FragColor, foamColor, foamWhiteness * foamFactor);
-	}
+	float combinedFoamFactor = max(texture(foamBuffer, tex).r, vFoamIntensity);
+	if (combinedFoamFactor > 0.0)
+		FragColor = ComputeFoam(tex, combinedFoamFactor);
 
 	// Wake around the ship (texture: contourShip)
 	if (bWake)
@@ -165,21 +165,7 @@ void main()
 		{
 			float wakefactor = texture(contourShip, wakeUV).r;
 			if (wakefactor > 0.0)
-			{
-				vec2 dx = dFdx(wakeUV);
-				vec2 dy = dFdy(wakeUV);
-
-				// Extract only the white component of the foam texture
-				vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
-				float foamWhiteness = max(foamTexture.r, max(foamTexture.g, foamTexture.b));
-			
-				// Extract the drawing from the foam
-				vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
-				vec4 foamColor = vec4(1.0) * (1.0 + wakefactor * foamBubblesTexture);
-			
-				// Mix the original color with the white foam
-				my_FragColor = mix(my_FragColor, foamColor, foamWhiteness * wakefactor);
-			}
+				FragColor = ComputeFoam(wakeUV, wakefactor);
 		}
 	}
 
@@ -194,24 +180,9 @@ void main()
 		{
 			float wakefactor = texture(wakeBuffer, wakeUV).r;
 			if (wakefactor > 0.0)
-			{
-				vec2 dx = dFdx(wakeUV);
-				vec2 dy = dFdy(wakeUV);
-							
-				// Extract only the white component of the foam texture
-				vec4 foamTex = textureGrad(foamTexture, tex * 20.0, dx, dy);
-				float foamWhiteness = max(foamTex.r, max(foamTex.g, foamTex.b));
-
-				// Extract the drawing from the foam
-				vec4 foamBubblesTex = textureGrad(foamBubbles, tex * 20.0, dx, dy);
-				vec4 foamColor = vec4(1.0) * (1.0 + wakefactor * foamBubblesTex);
-
-				// Mix the original color with the white foam
-				my_FragColor = mix(my_FragColor, foamColor, foamWhiteness * wakefactor);
-			}
+				FragColor = ComputeFoam(wakeUV, wakefactor);
 		}
 	}
-
 
 	if (bAbsorbance)
 	{
@@ -219,8 +190,8 @@ void main()
 		float distanceToCamera = length(eyePos - vertex);
 		float absorbanceFactor = exp(-absorbanceCoeff * distanceToCamera);
 		absorbanceFactor = clamp(absorbanceFactor, 0.0, 1.0);
-		vec3 finalColor = mix(absorbanceColor * exposure, my_FragColor.rgb, absorbanceFactor);
-		my_FragColor = vec4(finalColor, my_FragColor.a);
+		vec3 finalColor = mix(absorbanceColor * exposure, FragColor.rgb, absorbanceFactor);
+		FragColor = vec4(finalColor, FragColor.a);
 	}
 
 	if (bShowPatch)
@@ -228,15 +199,7 @@ void main()
 		float borderWidth = 0.05;
 		float edge = max( smoothstep(1.0 - borderWidth, 1.0, tex.x), smoothstep(1.0 - borderWidth, 1.0, tex.y) );
 		vec3 borderColor = vec3(1.0, 0.0, 0.0);
-		switch(int(floor(lod)))
-		{
-		case 0: borderColor = vec3(1.0, 0.0, 0.0); break;	// Red
-		case 1: borderColor = vec3(0.0, 1.0, 0.0); break;	// Green
-		case 2: borderColor = vec3(0.0, 0.0, 1.0); break;	// Blue
-		case 3: borderColor = vec3(1.0, 0.0, 1.0); break;	// Magenta
-		case 4: borderColor = vec3(0.0, 1.0, 1.0); break;	// Cyan
-		}
-		my_FragColor.rgb = mix(my_FragColor.rgb, borderColor, edge);
+		FragColor.rgb = mix(FragColor.rgb, borderColor, edge);
 	}
 
 	// Underwater effect: dark blue-green tint if the camera is below level 0
@@ -244,9 +207,9 @@ void main()
 	{
 		vec3 underwaterColor = vec3(0.0, 0.18, 0.22);		// Dark blue-green
 		float depth = clamp(-eyePos.y / 20.0, 0.0, 1.0);	// Deeper = more saturated
-		my_FragColor.rgb = mix(my_FragColor.rgb, underwaterColor, depth);
+		FragColor.rgb = mix(FragColor.rgb, underwaterColor, depth);
 	}
 
     // Apply dynamic exposure
-    my_FragColor.rgb = vec3(1.0) - exp(-my_FragColor.rgb * exposure);
+    FragColor.rgb = vec3(1.0) - exp(-FragColor.rgb * exposure);
 }

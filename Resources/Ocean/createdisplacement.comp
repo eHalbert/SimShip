@@ -9,6 +9,7 @@ layout (local_size_x = 16, local_size_y = 16) in;
 
 uniform float lambda;
 
+
 void main()
 {
 	ivec2 loc = ivec2(gl_GlobalInvocationID.xy);
@@ -19,5 +20,5 @@ void main()
 	float h = sign_correction * imageLoad(heightfield, loc).x;
 	vec2 D = sign_correction * imageLoad(choppyfield, loc).xy;
 
-	imageStore(displacement, loc, vec4(D.x * -lambda, 1.0 * h, D.y * -lambda, 1.0));
+	imageStore(displacement, loc, vec4(D.x * -lambda, h, D.y * -lambda, 1.0));
 }

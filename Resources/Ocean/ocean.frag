@@ -9,11 +9,11 @@ uniform sampler2D	foamDesign;
 uniform sampler2D	foamBubbles;
 uniform sampler2D	foamTexture;
 
-in vec3		vdir;
-in vec2		tex;
-in vec3		vertex;
-flat in int lod;
-flat in int iFoam;
+in vec3			vdir;
+in vec2			tex;
+in vec3			vertex;
+flat in int		lod;
+flat in int		iFoam;
 
 uniform vec3	oceanColor;
 uniform float	transparency;
@@ -25,11 +25,27 @@ uniform bool	bAbsorbance;
 uniform vec3	absorbanceColor;
 uniform float	absorbanceCoeff;
 uniform vec3	eyePos;
-uniform bool	bAttenuationFresnel;
 uniform bool	bShowPatch;
 
-out vec4 my_FragColor;
+out vec4 FragColor;
 
+
+vec4 ComputeFoam(vec2 uv, float factor)
+{
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+
+	// Extract only the white component of the foam texture
+	vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
+	float foamWhiteness = max(foamTexture.r, max(foamTexture.g, foamTexture.b));
+			
+	// Extract the drawing from the foam
+	vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
+	vec4 foamColor = vec4(1.0) * (1.0 + factor * foamBubblesTexture);
+			
+	// Mix the original color with the white foam
+	return mix(FragColor, foamColor, foamWhiteness * factor);
+}
 
 void main()
 {
@@ -44,11 +60,8 @@ void main()
 	float F = F0 + (1.0 - F0) * pow(1.0 - dot(N, R), 5.0);
 
 	// Less Fresnel effect if far away
-	if (bAttenuationFresnel)
-	{
-		float dist = length(eyePos - vertex);
-		F *= exp(-0.001 * dist);
-	}
+	float dist = length(eyePos - vertex);
+	F *= exp(-0.001 * dist);
 
 	// No Fresnel effect if underwater
 	if (eyePos.y < 0.0) 
@@ -88,10 +101,10 @@ void main()
 	}
 
 	// Final color
-	my_FragColor = vec4(mix(oceanColor, reflection * color_mod, F) + sunColor * spec, 0.75);
+	FragColor = vec4(mix(oceanColor, reflection * color_mod, F) + sunColor * spec, 0.75);
 	
 	// Transparent above, opaque at the edge
-	my_FragColor.a = 1.0 - abs(dot(N, R)) * transparency;
+	FragColor.a = 1.0 - abs(dot(N, R)) * transparency;
 
 	// The highest waves are greener and more transparent
 	if (iFoam == 1 && lod < 3.0)
@@ -100,28 +113,14 @@ void main()
 		const float sprayThresholdLower = 0.0;
 		const float sprayThresholdUpper = 4.0;
 		float heightFactor = smoothstep(sprayThresholdLower, sprayThresholdUpper, vertex.y);
-		my_FragColor.rgb = mix(my_FragColor.rgb, greenHighlight, heightFactor);
-		my_FragColor.a *= (1.0 - 0.5 * heightFactor);
+		FragColor.rgb = mix(FragColor.rgb, greenHighlight, heightFactor);
+		FragColor.a *= (1.0 - 0.5 * heightFactor);
 	}
 
 	// Foam
 	float foamFactor = texture(foamBuffer, tex).r;
 	if (iFoam == 1 && foamFactor > 0.0 && lod < 3.0)
-	{
-		vec2 dx = dFdx(tex);
-		vec2 dy = dFdy(tex);
-
-		// Extract only the white component of the foam texture
-		vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
-		float foamWhiteness = 1.5 * smoothstep(0.1, 1.0, max(foamTexture.r, max(foamTexture.g, foamTexture.b)));
-
-		// Extract the drawing from the foam
-		vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
-		vec4 foamColor = vec4(1.0) * (1.0 + foamFactor * foamBubblesTexture);
-
-		// Mix the original color with the white foam
-		my_FragColor = mix(my_FragColor, foamColor, foamWhiteness * foamFactor);
-	}
+		FragColor = ComputeFoam(tex, foamFactor);
 
 	if (bAbsorbance)
 	{
@@ -129,8 +128,8 @@ void main()
 		float distanceToCamera = length(eyePos - vertex);
 		float absorbanceFactor = exp(-absorbanceCoeff * distanceToCamera);
 		absorbanceFactor = clamp(absorbanceFactor, 0.0, 1.0);
-		vec3 finalColor = mix(absorbanceColor * exposure, my_FragColor.rgb, absorbanceFactor);
-		my_FragColor = vec4(finalColor, my_FragColor.a);
+		vec3 finalColor = mix(absorbanceColor * exposure, FragColor.rgb, absorbanceFactor);
+		FragColor = vec4(finalColor, FragColor.a);
 	}
 
 	// Color the left and bottom sides of the patch
@@ -147,7 +146,7 @@ void main()
 		case 3: borderColor = vec3(1.0, 0.0, 1.0); break;	// Magenta
 		case 4: borderColor = vec3(0.0, 1.0, 1.0); break;	// Cyan
 		}
-		my_FragColor.rgb = mix(my_FragColor.rgb, borderColor, edge);
+		FragColor.rgb = mix(FragColor.rgb, borderColor, edge);
 	}
 
 	// Underwater effect: dark blue-green tint if the camera is below level 0
@@ -155,9 +154,9 @@ void main()
 	{
 		vec3 underwaterColor = vec3(0.0, 0.18, 0.22);		// Dark blue-green
 		float depth = clamp(-eyePos.y / 20.0, 0.0, 1.0);	// Deeper = more saturated
-		my_FragColor.rgb = mix(my_FragColor.rgb, underwaterColor, depth);
+		FragColor.rgb = mix(FragColor.rgb, underwaterColor, depth);
 	}
 
     // Apply dynamic exposure
-    my_FragColor.rgb = vec3(1.0) - exp(-my_FragColor.rgb * exposure);
+    FragColor.rgb = vec3(1.0) - exp(-FragColor.rgb * exposure);
 }

@@ -15,6 +15,7 @@ shared vec2 pingpong[2][FFT_SIZE];
 
 layout (local_size_x = FFT_SIZE) in;
 
+
 void main()
 {
 	const float N = float(FFT_SIZE);
