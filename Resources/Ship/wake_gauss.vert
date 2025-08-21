@@ -3,10 +3,10 @@
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec2 inUV;
 
-out vec2 fragUV;
+out vec2 FragUV;
 
 void main() 
 {
-    fragUV = inUV;
+    FragUV = inUV;
     gl_Position = vec4(inPos, 1.0);
 }

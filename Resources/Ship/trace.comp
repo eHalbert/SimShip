@@ -1,0 +1,35 @@
+#version 430
+
+layout (local_size_x = 16, local_size_y = 16) in;
+
+layout (binding = 0, r8) uniform readonly image2D imageRead;
+layout (binding = 1, r8) uniform writeonly image2D imageWrite;
+
+uniform int dx; // pixel offset
+uniform int dz; // pixel offset
+
+const ivec2 center = ivec2(256, 256);
+
+void main() 
+{
+    ivec2 delta = ivec2(dx, dz);
+    ivec2 size = imageSize(imageRead);
+    ivec2 dstCoord = ivec2(gl_GlobalInvocationID.xy);
+
+    if (dstCoord.x >= size.x || dstCoord.y >= size.y)
+        return;
+
+    // Source position from which to copy the pixel (inverse of the offset)
+    ivec2 srcCoord = dstCoord + delta;
+
+    vec4 outVal = vec4(0.0);
+
+    if (srcCoord.x >= 0 && srcCoord.x < size.x && srcCoord.y >= 0 && srcCoord.y < size.y)
+        outVal = imageLoad(imageRead, srcCoord);
+
+    // If at the central pixel, force the value to 1.0 (255 in GL_R8)
+    if (dstCoord == center)
+        outVal = vec4(1.0);
+
+    imageStore(imageWrite, dstCoord, outVal);
+}

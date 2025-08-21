@@ -8,6 +8,7 @@ uniform float intensity;
 
 out vec4 FragColor;
 
+
 void main()
 {
     float dist = length(viewPos - FragPos);

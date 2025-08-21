@@ -1,0 +1,117 @@
+#version 430 core
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(rgba32f, binding = 0) uniform image2D texIN;
+layout(rgba32f, binding = 1) uniform image2D texOUT;
+
+uniform vec2		resolution;
+uniform float		time;
+uniform float		yaw = 0.0;      // Orientation (yaw) du bateau en radians, 0 = cap vers la droite
+
+vec2 boatPos = vec2(1.0, 0.0);      // Position du bateau dans l'espace normalisé centré (-0.5 .. +0.5)
+const bool bGradient = false;
+
+void main()
+{
+    // Identifie le pixel courant dans la grille (coordonnées entières)
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    // Si on est hors limite (au cas où), on sort
+    if (pixelCoords.x >= int(resolution.x) || pixelCoords.y >= int(resolution.y))
+        return;
+
+    // Coordonnées du pixel en float (pour calcul en virgule flottante)
+    vec2 fragCoord = vec2(pixelCoords);
+
+    // --- Normalisation centrée des coordonnées ---
+    
+    // On ramène la position du pixel dans un référentiel centré :
+    // (fragCoord - moitié de la résolution) recentre à (0,0) au centre de la texture, puis on divise par resolution.y pour garder une proportion homogène en Y,
+    // pos.x et pos.y sont donc dans l’intervalle approximatif [-0.5, +0.5].
+    vec2 pos = (fragCoord - 0.5 * resolution) / resolution.y;
+
+    // --- Applique une rotation inverse au vecteur position ---
+    
+    // pour exprimer la position du pixel dans le repère local du bateau (le long de son cap). Le cosinus et sinus de -yaw sont calculés et utilisés dans la matrice de rotation.
+    float cosA = cos(yaw);
+    float sinA = sin(yaw);
+    vec2 rotatedPos = vec2( pos.y * cosA - pos.x * sinA, pos.y * sinA + pos.x * cosA );
+
+    // --- Calcul de la position relative au bateau dans l’espace vague ---
+    
+    // On décale la position du pixel par la position (normalisée) du bateau, ce qui donne le vecteur position U dans le repère local du bateau.
+    vec2 U = rotatedPos - boatPos;
+    
+    // --- Décalage en X ---
+    
+    // On ajoute 1.0 à la coordonnée X du vecteur U. Ce décalage place l'origine du sillage un peu en avant du bateau dans sa direction.
+    U.x += 1.0;
+
+    // --- Paramètres physiques et simulatifs ---
+    float V = 10.0;             // Vitesse relative des ondes
+    float L = 2500.0;           // Longueur caractéristique d'échelle spatiale L (grande valeur => vagues larges)
+
+    vec2 M = vec2(0.0, 0.5);    // Coordonnée M fixe (influence de la position moyenne du motif)
+
+    // Calculs dérivés pour les paramètres d'atténuation et forme des ondes
+    float l0 = 2.0 * L * M.x;
+    float W = 128.0 * exp2(5.0 * M.y);
+
+    // Pas dans la boucle d’intégration (plus petit pas plus précis)
+    float dx = 1.0 / resolution.y;  // Default: 1.0 / resolution.y
+
+    // --- Conditions rapides pour optimisation ---
+    
+    // Si le pixel est "devant" le bateau, on ne génère pas d'onde : on écrit une couleur neutre moyenne 0.5.
+    if (U.x < 0.0)
+    {
+        imageStore(texOUT, pixelCoords, vec4(0.5));
+        return;
+    }
+
+    // Adaptation du pas dx pour accélérer le calcul hors-zone principale.
+    // Si la résolution est suffisante (plus de 200 en hauteur) et qu'on est loin en Y (> 100 pixels), on augmente dx pour faire moins d’itérations dans la boucle.
+    if (resolution.y > 200.0 && abs(U.y * resolution.y) > 100.0)
+        dx *= 8.0 * abs(U.y);
+
+    // --- Somme partielle pour simuler la superposition d’ondes ---
+    float sum = 0.0;
+    float sumdx = 0.0;
+    float sumdy = 0.0;
+
+    // Boucle sur x de 0 à 5 par pas dx (intégration le long de la direction X du sillage)
+    for(float x = 0.0; x <= 5.0; x += dx)
+    {
+        vec2 P = U - vec2(x, 0.0 * sin(2.0 * x - time));    // Vecteur ponctuel décalé : on prend U et on retire un vecteur oscillant de valeur x et hauteur sinusoïdale
+        float l = length(P) * L;                            // Longueur du vecteur P multipliée par L : distance physique pondérée
+        float k = 6.283 / (2.0 * l);                        // Nombre d’onde k = 2pi / (2l)
+        float t = x * L / V;                                // Temps local t pour la propagation de l’onde en fonction de x, L et la vitesse V
+        float a = 3.1416 - sqrt(9.81 * k) * t;              // Calcul d'une phase d’onde modifiée, associée à la physique des vagues de gravité
+        float v = (l - l0) / W;                             // Variable v utilisant l’écart entre l et l0 normalisé par W (largeur de l’enveloppe)
+        float waveVal = cos(a) / l * exp(-0.5 * v * v);     // Somme pondérée d’onde : cos(a)/l * gaussienne centrée sur l0
+        sum += waveVal;
+
+        if (bGradient)
+        {
+            vec2 dir = normalize(P);                            // Donne la direction par rapport au navire
+            sumdx += waveVal * (-dir.x);                        // En pondérant ce vecteur par la valeur d’onde (waveVal) et en accumulant négativement (-dir.x) et (-dir.y), 
+            sumdy += waveVal * (-dir.y);                        // on calcule un gradient spatial approximatif de la surface.
+            // Ce gradient spatial donne une indication sur la pente locale de la surface de l’eau, 
+            // ce qui est lié à la direction et à la vitesse locale de la vague (la dérivée spatiale est liée à la vitesse de déplacement des crêtes et des creux).
+        }
+    }
+
+    // --- Construction de la couleur finale ---
+    vec4 base = vec4(0.5);
+
+    // poids final sum multiplié par divers facteurs pour intensifier le motif
+    vec4 color = base + base * sum * dx * 1700.0;
+    if (bGradient)
+    {
+        color.g = clamp(sumdx * 20.0, -1.0, 1.0);
+        color.b = clamp(sumdy * 20.0, -1.0, 1.0);
+    }
+
+    // --- Stockage dans la texture de sortie ---
+    imageStore(texOUT, pixelCoords, color);
+}

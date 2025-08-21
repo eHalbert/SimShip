@@ -9,7 +9,7 @@ uniform sampler2D texWake;          // Ship silhouette texture (alpha)
 uniform vec2    texWakeSize;        // UV size of the projected silhouette
 uniform float   rotationShip;       // Ship rotation in radians
 uniform vec2    shipPos;
-uniform vec2    posDelta;         // Offset UV scroll accumulation
+uniform vec2    posDelta;           // Offset UV scroll accumulation
 uniform float   rotDelta;
 uniform vec2    worldMin;           // coin bas-gauche du plan monde couvert par la texture accumulée
 uniform vec2    worldMax;           // coin haut-droit
@@ -18,17 +18,15 @@ out float FragAlpha;
 
 // The ship is always placed in the middle, i.e. vec2(0.5)
 
-// Convertir coordonnée UV dans [0,1] en coordonnée monde
-vec2 texUVToWorld(vec2 uv)
-{
+vec2 texUVToWorld(vec2 uv) {
+    // Convert UV coordinate in [0,1] to world coordinate
     return mix(worldMin, worldMax, uv);
 }
-
-// Convertir coordonnée monde en UV dans [0,1]
-vec2 worldToTexUV(vec2 worldPos)
-{
+vec2 worldToTexUV(vec2 worldPos) {
+    // Convert world coordinate to UV in [0,1]
     return (worldPos - worldMin) / (worldMax - worldMin);
 }
+
 void main()
 {
     // 1. Ship display in central and oriented position
@@ -57,16 +55,16 @@ void main()
     // 2. Display previous pixels
     // ==========================
 
-    // Coordonnées UV courantes
+    // Current UV coordinates
     vec2 uv = TexCoords;
 
-    // Convertir en position monde
+    // Convert to world position
     vec2 worldPos = texUVToWorld(uv);
 
-    // Centrer la rotation autour du navire
+    // Center the rotation around the ship
     worldPos -= shipPos;
 
-    // Appliquer rotation inverse
+    // Apply reverse rotation
     float cosRd = cos(-rotDelta);
     float sinRd = sin(-rotDelta);
     vec2 rotated = vec2(
@@ -74,19 +72,20 @@ void main()
         worldPos.x * sinRd + worldPos.y * cosRd
     );
 
-    // Remettre en place dans le monde
+    // Putting back in place in the world
     rotated += shipPos;
 
-    // Appliquer translation inverse (remonter dans le temps)
+    // Apply reverse translation (go back in time)
     rotated += posDelta;
 
-    // Convertir de nouveau en UV pour échantillonner la texture précédente
+    // Convert back to UV to sample the previous texture
     vec2 shiftedUV = worldToTexUV(rotated);
 
-    // Échantillonner la texture précédente
+    // Sample the previous texture
     float oldAlpha = texture(texPrevAccum, shiftedUV).r;
 
     // 3. Combined display with oldAlpha masked by the ship
-   
+    // ====================================================
+
    FragAlpha = clamp(oldAlpha * 0.995 + wakeAlpha, 0.0, 1.0);
 }

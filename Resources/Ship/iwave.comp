@@ -1,0 +1,76 @@
+﻿#version 430
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba32f) uniform readonly image2D	previous_image;
+layout(binding = 1, rgba32f) uniform readonly image2D	current_image;
+layout(binding = 2, rgba32f) uniform writeonly image2D	next_image;
+layout(std430, binding = 3) buffer KernelBuffer { float kernel[]; };
+
+uniform int		dx;
+uniform int		dz;
+uniform float	dt;
+uniform float	yaw = 0.0;
+
+const int iWave = 1;
+
+void main()
+{
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	if (uv.x < 1 || uv.x > 510 || uv.y < 1 || uv.y > 510)
+		return;
+
+	ivec2 delta = ivec2(256 + dx, 256 + dz);
+
+	float previous	= imageLoad(previous_image, uv).r;
+	float current	= imageLoad(current_image, uv).r;
+	
+	float new = 0.0;
+
+	if (iWave == 0)
+	{
+		float vertical_derivative = 0.0;
+		for (int i = -6; i <= 6; i++)
+		{
+			for (int j = -6; j <= 6; j++)
+			{
+				float k = kernel[(i + 6) + 13 * (j + 6)];
+				float h = imageLoad(current_image, uv + ivec2(i, j)).r;
+				vertical_derivative += k * h;
+			}
+		}
+		float alpha = 0.1;		// 1.35
+		float adt = alpha * dt;	// 0.009
+		float adt2 = 1.0 / (1.0 + adt);
+		new = (2.0 - adt) * current - previous - 0.5 * dt * vertical_derivative;
+		new *= adt2;
+	}
+	else if (iWave == 1)
+	{
+		float up		= imageLoad(current_image, uv - ivec2(0, 1)).r;
+		float down		= imageLoad(current_image, uv + ivec2(0, 1)).r;
+		float left		= imageLoad(current_image, uv - ivec2(1, 0)).r;
+		float right		= imageLoad(current_image, uv + ivec2(1, 0)).r;
+
+		float alpha = 0.1;
+		float adt = alpha * dt;
+		float adt2 = 1.0 / (1.0 + adt);
+		new = (2.0 - adt) * current - previous + 0.5 * dt * (up + down + left + right - 4.0 * current);
+		new *= adt2;
+	}
+  
+	// Source is a weighted square
+	ivec2 offset = uv - delta;
+    if (abs(offset.x) <= 1 && abs(offset.y) <= 1)
+    {
+        // Weights: center: 1.0, sides (top, bottom, right, left): 0.5, corners: 0.25
+        float weight = 0.0;
+        if (offset.x == 0 && offset.y == 0)			weight = 1.0;
+        else if (offset.x == 0 || offset.y == 0)	weight = 0.5;
+        else										weight = 0.25;
+        new = weight;
+    }
+
+	vec4 result = vec4(new, 2.0 * new, 2.0 * new, 1.0);
+	imageStore(next_image, uv, result);
+}

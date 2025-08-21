@@ -8,6 +8,7 @@ uniform mat4 projection;
 
 out vec3 fragmentColor;
 
+
 void main()
 {
     fragmentColor = aColor;

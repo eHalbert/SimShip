@@ -1,0 +1,99 @@
+#version 430
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3    position;
+    vec3    velocity;
+    float   life;
+    vec4    color;
+};
+
+layout(std430, binding = 0) buffer Particles { Particle particles[]; };
+//layout(std430, binding = 1) buffer CounterBuffer { int liveCounter; };
+
+uniform float   dt;
+uniform int     particlesPerFrame;  
+uniform vec3    emitPositions[2];
+uniform int     numEmitters;
+uniform vec3    windDirection;
+uniform int     frameCount;
+uniform float   shortLife;
+uniform float   longLife;
+
+float rand(vec2 co) {
+    return fract(43758.5453 * fract(co.x * 0.3183099 + co.y * 0.3678794));  // [0, 1)
+}
+
+void main() 
+{
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= particles.length()) return;
+
+    Particle p = particles[idx];
+
+    if (p.life <= 0.0) 
+    {
+        // Calculating a starting index for this frame's emissions
+        uint startIdx = (frameCount * uint(particlesPerFrame)) % uint(particles.length());
+
+        // Emission of particles in the range [startIdx, startIdx + particlesPerFrame) by managing the wrap-around (return to the beginning)
+        bool emitThisParticle = false;
+
+        if (startIdx + uint(particlesPerFrame) <= uint(particles.length())) 
+            // No wrapping
+            emitThisParticle = (idx >= startIdx) && (idx < startIdx + uint(particlesPerFrame));
+        else 
+            // Wrapping : we emit at the beginning and end of the buffer
+            emitThisParticle = (idx >= startIdx) || (idx < (startIdx + uint(particlesPerFrame)) % uint(particles.length()));
+
+        if (emitThisParticle) 
+        {
+            // Random offset position around emitPosition (~ +/-0.05)
+            vec3 randomOffset = vec3(
+                (rand(vec2(idx, float(frameCount))) - 0.5) * 0.1,   // -0.05 ... 0.05
+                (rand(vec2(float(frameCount), idx)) - 0.5) * 0.1,   // -0.05 ... 0.05
+                (rand(vec2(idx * 2, idx * 3)) - 0.5) * 0.1          // -0.05 ... 0.05
+            );
+            int emitterIndex = int(idx) % numEmitters;
+            vec3 emitPosition = emitPositions[emitterIndex];
+            p.position = emitPosition + randomOffset;
+
+            // Random variation around the emission direction
+            vec3 randomVelocity = vec3(
+                (rand(vec2(idx, idx * 2)) - 0.5) * 0.2,     // -0.1 ... 0.1
+                rand(vec2(idx * 3, idx * 4)) * 1.0,         //  0.0 ... 0.5
+                (rand(vec2(idx * 5, idx * 6)) - 0.5) * 0.2  // -0.1 ... 0.5
+            );
+            p.velocity = randomVelocity;
+
+            p.life = shortLife + (rand(vec2(idx, frameCount)) * float(longLife - shortLife));
+
+            float grayShade = 0.3 + rand(vec2(idx, frameCount)) * 0.1;  // 0.3 ... 0.4
+            p.color = vec4(grayShade, grayShade, grayShade, 0.8);
+        }    
+    } 
+    else 
+    {
+        p.life -= dt;
+        //atomicAdd(liveCounter, 1);
+        
+        // Thermal lift
+        p.velocity += vec3(0.0, 0.05 * dt, 0.0);
+
+        // Adding wind
+        p.velocity += windDirection * dt;
+
+        // Turbulences
+        float turbulenceStrength = 0.5;
+        p.velocity += turbulenceStrength * vec3(
+            (rand(vec2(idx,idx * 7)) - 0.5),        // -0.5 ... 0.5
+            (rand(vec2(idx * 3,idx * 11))),         //  0.0 ... 1.0
+            (rand(vec2(idx * 5,idx * 13)) - 0.5)    // -0.5 ... 0.5
+        ) * dt;
+
+        p.position += p.velocity * dt;
+    }
+
+    particles[idx] = p;
+}
