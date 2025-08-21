@@ -54,7 +54,4 @@ Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.c
 
 # License
 
-- Creative Commons CC BY-NC. This license enables reusers to distribute, remix, adapt, and build upon the material in any medium or format for noncommercial purposes only, and only so long as attribution is given to the creator. CC BY-NC includes the following elements:
-
- BY: credit must be given to the creator.
- NC: Only noncommercial uses of the work are permitted.
+- Creative Commons CC BY-NC. This license enables reusers to distribute, remix, adapt, and build upon the material in any medium or format for noncommercial purposes only, and only so long as attribution is given to the creator.
