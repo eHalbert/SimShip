@@ -1,4 +1,4 @@
-﻿#version 430 core
+#version 430 core
 
 // Special thanks to Nadir Román Guerrero https://github.com/NadirRoGue for inspiring me doing this work!
 // Thanks to WFP from gamedev.net and the rest of the community who partecipated at this topic https://www.gamedev.net/forums/topic/680832-horizonzero-dawn-cloud-system/?page=6
@@ -224,7 +224,8 @@ vec3 getSunDisk(const vec3 d)	// Add-on for drawing the sun (without godrays sel
 
 float Random2D(in vec3 st) 
 {
-	return fract(sin(iTime * dot(st.xyz, vec3(12.9898, 78.233, 57.152))) * 43758.5453123);
+	//return fract(sin(iTime * dot(st.xyz, vec3(12.9898, 78.233, 57.152))) * 43758.5453123);
+	return fract(43758.5453 * fract(st.x * 0.1031 + st.y * 0.11369 + st.z * 0.13787));
 }
 
  float getHeightFraction(vec3 inPos) 
