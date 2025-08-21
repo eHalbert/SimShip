@@ -19,6 +19,7 @@ void main()
 		vec2(1.0, 1.0));
 
 	tex = (matTexture * vec4(texcoords[gl_VertexID], 0.0, 1.0)).xy;
-	//tex = vec2(1.0 - tex.x, tex.y);
+	//tex = vec2(1.0 - tex.x, tex.y
+	tex = vec2(tex.x, 1.0 - tex.y);
 	gl_Position = positions[gl_VertexID];
 }

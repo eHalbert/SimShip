@@ -23,56 +23,24 @@ uniform float	fogDensity;
 uniform float   uTime;        // Time in second
 uniform vec2    screenSize;   // Size of the window in pixels
 
-// Binoculars
-uniform bool    bBinoculars;
+// Effects
+uniform bool    bLowIntensity = false;
+uniform bool    bNightVision = false;
 
 in vec2 tex;
 
 out vec4 my_FragColor;
 
+
 const float f =  2.0 * sqrt(2.0);
 
-// Simple noise function for particles
-float hash(vec2 p) 
-{
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+float hash(vec2 p) {
+    //return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    return fract(43758.5453 * fract(p.x * 0.3183099 + p.y * 0.3678794));
 }
 
-void main() 
+void main()
 {
-    float mask = 1.0;
-    if (bBinoculars)
-    {
-        // Centers of the two circles in UV coordinates
-        vec2 centerLeft = vec2(0.35, 0.5);
-        vec2 centerRight = vec2(0.65, 0.5);
-        float radius = 0.45;
-
-        // Calculating the width/height ratio
-        float aspect = screenSize.x / screenSize.y;
-
-        // Adjusting coordinates to compensate for aspect ratio
-        vec2 coordLeft = tex - centerLeft;
-        coordLeft.x *= aspect;
-
-        vec2 coordRight = tex - centerRight;
-        coordRight.x *= aspect;
-
-        float distLeft = length(coordLeft);
-        float distRight = length(coordRight);
-
-        float edgeWidth = 0.02; // edge gradient width
-
-        float maskLeft = smoothstep(radius, radius - edgeWidth, distLeft);
-        float maskRight = smoothstep(radius, radius - edgeWidth, distRight);
-
-
-        float mask = max(maskLeft, maskRight);
-
-        if (mask == 0.0)
-            discard;
-    }
-
     vec4 color = texture(texColor, tex);
 
     float depth = texture(texDepth, tex).r;
@@ -80,7 +48,7 @@ void main()
     linearDepth = clamp(linearDepth, near, far);
 
     // Underwater effect always active if the camera is underwater
-    if (eyePos.y < 0.0) 
+    if (eyePos.y < 0.0)
     {
         // Underwater fog: depends only on camera-pixel distance
         float fogFactor = 1.0 - exp(-0.01 * linearDepth); // The further you look, the denser it is.
@@ -155,8 +123,9 @@ void main()
         float mistThicknessAbove = 0.1;  
         float mistThicknessBelow = 0.5;
 
-        // Calculation of vertical mist factor — decreasing above and below
+        // Calculation of vertical mist factor â€” decreasing above and below
         float above = 1.0 - smoothstep(horizonHeight, horizonHeight + mistThicknessAbove, screenY);
+        above *= 0.6;
         float below = 1.0 - smoothstep(horizonHeight - mistThicknessBelow, horizonHeight, screenY);
         float heightMistFactor = max(above, below);
         heightMistFactor = clamp(heightMistFactor, 0.0, 1.0);
@@ -173,7 +142,6 @@ void main()
 
         // Final Mix
         color = mix(vec4(mistCol, 1.0), color, 1.0 - mistFactor);
-
     }
     else if (fogDensity > 0.0)
     {
@@ -182,9 +150,23 @@ void main()
         color = mix(vec4(fogColor * exposure, 1.0), color, fogFactor);
     }
 
-    // Apply the gentle mask of the binoculars to the fragment
-    if (bBinoculars)
-        my_FragColor = vec4(color.rgb * mask, color.a * mask);
-    else
-        my_FragColor = color;
+    if (bLowIntensity)
+    {
+        float intensity = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 lowIntensity = vec3(intensity * 0.4);                  // Only 40% brightness
+        color = vec4(mix(color.rgb, lowIntensity, 0.9), color.a);   // Almost monochrome and faint
+    }
+
+    if (bNightVision)
+    {
+        float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 nightVision = vec3(0.1, 0.95, 0.2) * luminance * 1.5;  // Midnight green
+        float noise = fract(sin(dot(tex * uTime * 400.0, vec2(12.9898, 78.233))) * 43758.5453);
+        nightVision += (noise - 0.5) * 0.04;
+        float vignette = smoothstep(0.75, 0.5, distance(tex, vec2(0.5, 0.5)));
+        nightVision *= vignette;
+        color.rgb = nightVision;
+    }
+
+    my_FragColor = color;
 }
