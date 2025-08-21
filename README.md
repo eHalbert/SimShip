@@ -1,5 +1,5 @@
 # SimShip
-Simulation of a ship moving on a cinematic-quality ocean.
+Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.com/watch?v=ywmwANNGrns&ab_channel=EdouardHalbert)
 
 *[The code (C++ and shaders) is complete but without a cmake file. Not all resource files are present. All libraries must be included.]*
 
