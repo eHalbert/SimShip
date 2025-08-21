@@ -1,5 +1,6 @@
 # SimShip
 Simulation of a ship moving on a cinematic-quality ocean.
+[The code is complete but without a cmake file. Not all resource files are present. All libraries must be included.]
 
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
