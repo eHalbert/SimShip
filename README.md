@@ -34,7 +34,7 @@ Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.c
 - Ship motion forces (archimede, gravity, viscous resistance, wave resistance, residual resistance, wind drift, wind rotation, thuster, bow thruster, rudder).
 - Propellers and radars animated.
 - Reflection of the ship on the water.
-- Wake simulation (foam and bubbles).
+- Wake simulation (kelvin waves, foam and bubbles).
 - Smoke simulated with particles.
 - Navigation lights.
 - Autopilot with Proportional-Integral-Derivative controller.
