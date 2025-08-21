@@ -3,7 +3,7 @@ Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.c
 
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
-- Simulation written in C++ with OpenGL, GLFW, Glad, glm, Open Asset Import Library (assimp), libigl, ImGui, OpenAL, NanoVG, stb, FreeImage, Eigen, FFTW3, pugixml, libnova, Clipper2.
+- Simulation written in C++ with OpenGL, GLFW, Glad, GLM, Open Asset Import Library (assimp), libigl, ImGui, OpenAL, NanoVG, stb, Eigen, FFTW3, Pugixml, libnova, Clipper2.
 - Real time simulation with high rate of frames per second (target of 150 fps in fullscreen 2560 x 1440).
 - The rendering of the 3D scene is optimized to ensure consistency of visual quality between all elements: ocean, ship, sky, clouds, terrain, mist or fog effects.
 
