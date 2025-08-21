@@ -1,0 +1,19 @@
+LIBRARIES TO ADD
+
+- OpenGL 4.6	...	for the rendering with shaders, multisample and post-processing
+- glfw		    ...	for windows integration
+- glad		    ...	for the management of opengl extensions
+- glm			...	mathematics for opengl
+- assimp		...	3D model loading for rendering
+- libigl		...	3D model handling for physics
+- eigen		    ...	with libigl
+- imgui		    ...	2D interface
+- nanovg		...	2D drawing
+- stb			...	for image handling
+- gli         	... for dds images handling
+- freeimage	  	...	for image handling
+- fftw3		    ...	for ocean spectral analysis
+- pugixml		...	for the markup
+- nova		    ...	for the positions of the sun
+- MeshPlaneIntersect ... for the contour of the ship
+- clipper		...	for the contour of the ship
