@@ -41,7 +41,7 @@ Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.c
 
 **ENVIRONMENT**
 
-- Camera full smooth motion (orbital around the ship, fps, fixed views and free views on board the ship).
+- Camera full smooth motion (orbital around the ship, fps, fixed views and free views on board the ship, binoculars).
 - 3D sounds (engines, seagulls, horn).
 - Terrain (island).
 - Markup (buoys).
