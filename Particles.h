@@ -18,12 +18,12 @@ struct ParticleGPU
     vec4    color;
 };
 
-class Smoke 
+class Spray
 {
 public:
     bool bVisible = true;
 
-    Smoke() 
+    Spray()
     {
         lifeSpan = (int)((longLife - shortLife) * 10.0f) + 1;
 
@@ -60,89 +60,75 @@ public:
         glBindVertexArray(0);
 
         glDepthMask(GL_FALSE);
-        mShader = make_unique<Shader>("Resources/Ship/particles.vert", "Resources/Ship/particles.frag");
+        mShader = make_unique<Shader>("Resources/Ship/spray.vert", "Resources/Ship/spray.frag");
         glDepthMask(GL_TRUE);
     }
 
-    ~Smoke() 
+    ~Spray()
     {
         glDeleteBuffers(1, &mVBO);
         glDeleteVertexArrays(1, &mVAO);
     }
 
-    void Emit(vec3 position, vec3 direction)
+    void Emit(vec3 position, vec3 velocity)
     {
-        if (mActiveParticles < mMaxParticles)
-        {
-            // Added a slight random variation to the emission position
-            vec3 randomOffset = vec3(
-                (rand() % 100 - 50) / 1000.0f,
-                (rand() % 100 - 50) / 1000.0f,
-                (rand() % 100 - 50) / 1000.0f
-            );
+        if (mActiveParticles >= mMaxParticles)
+            return;
 
-            mvParticles[mActiveParticles].position = position + randomOffset;
+        vec3 randomOffset = vec3( (rand() % 100 - 50) / 1000.0f, (rand() % 100 - 50) / 1000.0f, (rand() % 100 - 50) / 1000.0f );
+        mvParticles[mActiveParticles].position = position + randomOffset;
 
-            // Added random variation to direction and speed
-            vec3 randomVelocity = vec3(
-                (rand() % 100 - 50) / 500.0f,
-                (rand() % 200) / 500.0f,  // Tendency to rise
-                (rand() % 100 - 50) / 500.0f
-            );
-            mvParticles[mActiveParticles].velocity = direction + randomVelocity;
+        // Ajout de variation aléatoire pour un mouvement naturel
+        vec3 randomVelocity = vec3( (rand() % 100 - 50) / 500.0f, (rand() % 100 - 50) / 500.0f, (rand() % 100 - 50) / 500.0f );
+        mvParticles[mActiveParticles].velocity = velocity + randomVelocity;
+        
+        mvParticles[mActiveParticles].life = shortLife + (rand() % lifeSpan) / 10.0f;
 
-            mvParticles[mActiveParticles].life = shortLife + (rand() % lifeSpan) / 10.0f;
+        float gray = 0.8f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 0.2f;
+        mvParticles[mActiveParticles].color = vec4(gray, gray, gray, 0.8f);
 
-            // Gray color with slight variation
-            float grayShade = 0.3f + (rand() % 10) / 1000.0f;
-            mvParticles[mActiveParticles].color = vec4(grayShade, grayShade, grayShade, 0.8f);
-
-            mActiveParticles++;
-        }
+        mActiveParticles++;
     }
-
-    void Update(float deltaTime, vec3& windDirection, float windStrength)
+    void Update(float deltaTime)
     {
+        const float gravity = 9.81f;
+
         for (int i = 0; i < mActiveParticles; ++i)
         {
             mvParticles[i].life -= deltaTime;
-            if (mvParticles[i].life < 0)
+            if (mvParticles[i].life < 0)   // Underwater
             {
-                // Replace the dead particle with the last active one
+                // Remplace la particule morte par la dernière
                 mvParticles[i] = mvParticles[mActiveParticles - 1];
                 mActiveParticles--;
-                i--; // Check this position again
+                i--;
                 continue;
             }
 
-            // Add thermal lift force
-            mvParticles[i].velocity.y += 0.5f * deltaTime;
+            // Applique la gravité (descente verticale)
+            mvParticles[i].velocity.y -= gravity * deltaTime;
 
-            // Add a gentle wind effect
-            mvParticles[i].velocity += windDirection * (windStrength * 0.5f) * deltaTime;
+            // Turbulence légère
+            float turbulenceStrength = 50.0f;
+            mvParticles[i].velocity += turbulenceStrength * vec3( (rand() % 100 - 50) / 100.0f, (rand() % 100 - 50) / 100.0f, (rand() % 100 - 50) / 100.0f ) * deltaTime;
 
-            // Add light turbulence
-            float turbulenceStrength = 20.0f;
-            mvParticles[i].velocity += turbulenceStrength * glm::vec3(
-                (rand() % 100 - 50) / 100.0f,
-                (rand() % 100 - 50) / 100.0f,
-                (rand() % 100 - 50) / 100.0f
-            ) * deltaTime;
-
-            // Position update
+            // Mise à jour position
             mvParticles[i].position += mvParticles[i].velocity * deltaTime;
         }
 
         UpdateParticleBuffers();
     }
 
-    void UpdateParticleBuffers() 
+    void UpdateParticleBuffers()
     {
         glBindBuffer(GL_ARRAY_BUFFER, mVBO);
         glBufferSubData(GL_ARRAY_BUFFER, 0, mActiveParticles * sizeof(ParticleGPU), mvParticles.data());
     }
-
-    void Render(Camera& camera, float density)
+    float GetNbActiveParticles()
+    {
+        return mActiveParticles;
+    }
+    void Render(Camera& camera, float density, float exposure)
     {
         if (!bVisible)
             return;
@@ -152,6 +138,7 @@ public:
         mShader->setMat4("projection", camera.GetProjection());
         mShader->setFloat("density", density);
         mShader->setFloat("lifeSpan", lifeSpan);
+        mShader->setFloat("exposure", exposure);
 
         glBindVertexArray(mVAO);
         glDrawArraysInstanced(GL_POINTS, 0, 1, mActiveParticles);
@@ -159,14 +146,14 @@ public:
     }
 
 private:
-    static const int    mMaxParticles = 10000;
-    
+    static const int    mMaxParticles = 50000;
+
     vector<ParticleGPU> mvParticles;
     GLuint              mVBO;
     GLuint              mVAO;
     unique_ptr<Shader>  mShader;
     int                 mActiveParticles = 0;
-    const float         shortLife = 5.0f;
-    const float         longLife = 10.0f;
+    const float         shortLife = 1.0f;
+    const float         longLife = 2.0f;
     int                 lifeSpan;
 };

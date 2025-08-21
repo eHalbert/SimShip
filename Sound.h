@@ -30,6 +30,9 @@ private:
     }
 
 public:
+
+    bool    bSound = true;
+
     static SoundManager* getInstance() 
     {
         if (!instance) 
@@ -91,7 +94,6 @@ public:
         ALfloat listenerPos[] = { pos.x, pos.y, pos.z };
         alListenerfv(AL_POSITION, listenerPos);
     }
-
     void setListenerOrientation(float atX, float atY, float atZ, float upX, float upY, float upZ) 
     {
         ALfloat orientation[] = { atX, atY, atZ, upX, upY, upZ };
@@ -104,6 +106,7 @@ public:
     }
 
 private:
+
     bool loadWAV(const string& fichier, ALuint& buffer) 
     {
         FILE* fp = fopen(fichier.c_str(), "rb");

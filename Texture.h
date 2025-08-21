@@ -181,6 +181,8 @@ public:
 			numChannel = 2;
 		else if (texture->internal_format == GL_RED)
 			numChannel = 3;
+		else if (texture->internal_format == GL_R8)
+			numChannel = 3;
 
 		mShader->use();
 		mShader->setInt("u_NumChannels", numChannel);

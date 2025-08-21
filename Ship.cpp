@@ -1,14 +1,17 @@
 ﻿#include "Ship.h"
 #include <omp.h>
 #include "MeshPlaneIntersect.hpp"
+#include <math.h>
 
 #include "clipper/clipper.h"
 #ifdef _DEBUG
-#pragma comment(lib, "clipper/Debug/x64/clipper.lib")
+#pragma comment(lib, "clipper/Debug/clipper.lib")
 #else
-#pragma comment(lib, "clipper/Release/x64/clipper.lib")
+#pragma comment(lib, "clipper/Release/clipper.lib")
 #endif
 using namespace Clipper2Lib;
+
+//#define DEBUG_SMOKE // Update smoke.comp with 2 lines: layout(std430, binding = 1) buffer CounterBuffer { int liveCounter; }; atomicAdd(liveCounter, 1);
 
 extern float            g_WindSpeedKN;
 extern vec2             g_Wind;
@@ -16,24 +19,24 @@ extern SoundManager   * g_SoundMgr;
 extern bool             g_bPause;
 extern Camera           g_Camera;
 
-GLuint                  TexContourShip;                // Texture of the contour of the ship
+GLuint                  TexContourShip      = 0;                // Texture of the contour of the ship
 int                     TexContourShipW;
 int                     TexContourShipH;
-GLuint                  TexWakeBuffer;
-int					    TexWakeBufferSize = 512;
-GLuint                  TexWakeVao;
-int					    TexWakeVaoSize = 1024;
+GLuint                  TexWakeBuffer       = 0;
+int					    TexWakeBufferSize   = 512;
+GLuint                  TexWakeVao          = 0;
+int					    TexWakeVaoSize      = 1024;
 
-bool bVAO = true;
+bool                    bTexWakeByVAO       = true;
+
 
 Ship::~Ship()
 {
     BBoxShape.reset();
-    mSmokeLeft.reset();
-    mSmokeRight.reset();
+    mSpray.reset();
 
-    glDeleteVertexArrays(1, &mVao);
-    glDeleteBuffers(1, &mVbo);
+    glDeleteVertexArrays(1, &mVaoHull);
+    glDeleteBuffers(1, &mVboHull);
     glDeleteVertexArrays(1, &mVaoLines);
 
     mModelFull.reset();
@@ -84,8 +87,15 @@ Ship::~Ship()
     glDeleteBuffers(1, &mVboContour1);
 }
 
+void Ship::SetOcean(Ocean* ocean)
+{
+    mOcean = ocean;
+    pDisplacement = ocean->GetPixelsDisplacement();
+};
 void Ship::Init(sShip& ship, Camera& camera)
 {
+    //CreateKelvinImages();
+
     this->ship = ship;
     
     // Read the mvVertices and the faces
@@ -101,7 +111,65 @@ void Ship::Init(sShip& ship, Camera& camera)
     TransformVertices();
 
     // Get data
-    GetBoundingBox();
+    InitBoundingBox();
+    InitDimensions();
+
+    UpdateWorldMatrix();                        // Necessary for several calculations to come
+
+    mvTris.resize(mF.rows());
+    InitTriangles();                             // Create the list of the triangles
+    InitCentroid();                              // Compute the centre of the volume
+    InitSurfaces();                              // Certain surfaces
+    InitVolume();                                // Total volume of the hull
+    InitInertia();                      // Compute all moments of inertia (Ixx, Iyy, Izz, Ixy, Ixz, Iyz)
+    
+    // Info to display with interface
+    ssHull << "Length/Width : " << std::fixed << std::setprecision(2) << mLength << " m x " << mWidth << " m " << endl;
+    ssHull << "Draft : " << std::fixed << std::setprecision(2) << mDraft << endl;
+    ssHull << "Mass : " << std::setprecision(0) << int(ship.Mass_t) << " t" << endl;
+    InfoHull = ssHull.str();
+   
+    InitWaterVertices();                         // Create the list of water vertices in the reference patch
+    InitVaoHull();                                // Create the VAO of the colored hull
+    InitContours();
+    InitShaders();
+    InitTextures();
+    InitVaoWake();
+    InitModels();
+    InitSounds(camera);
+    InitSmoke();
+
+    mSpray = make_unique<Spray>();
+
+    ResetVelocities();
+    bMotion = false;
+    bSound = true;
+
+#ifdef TRACE
+    InitTrace();
+#endif
+}
+void Ship::InitBoundingBox()
+{
+    mBbox.min = vec3(FLT_MAX);
+    mBbox.max = vec3(FLT_MIN);
+
+    if (mvVertices.size() > 0)
+    {
+        for (auto& v : mvVertices)
+        {
+            mBbox.min = glm::min(mBbox.min, v);
+            mBbox.max = glm::max(mBbox.max, v);
+        }
+    }
+    else
+    {
+        mBbox.min = vec3(0.0f);
+        mBbox.max = vec3(0.0f);
+    }
+}
+void Ship::InitDimensions()
+{
     mMass = ship.Mass_t * 1000.0f;              // t -> kg for all physical calculations
     mPowerW = ship.PowerkW * 1000.0f;           // kW -> W for all physical calculations
     mLength = fabs(mBbox.max.x - mBbox.min.x);  // Overall length
@@ -110,37 +178,229 @@ void Ship::Init(sShip& ship, Camera& camera)
     if (mLength < mWidth) std::swap(mLength, mWidth);
     mDraft = -mBbox.min.y;                      // Below the water level
     mAirDraft = mBbox.max.y;                    // Above the water level
-	mBow = vec3(mBbox.max.x, 0.0f, 0.0f);       // Distance to the centre
-	mStern = vec3(mBbox.min.x, 0.0f, 0.0f);     // Distance to the centre
+    mBow = vec3(mBbox.max.x, 0.0f, 0.0f);       // Distance to the centre
+    mStern = vec3(mBbox.min.x, 0.0f, 0.0f);     // Distance to the centre
     mWakePivot = vec3(mBbox.min.x + 0.5 * mWidth, 0.0f, 0.0f);
     mRudderArea = (mLength * mDraft * 0.01f) * (1.0f + 0.25f * (mWidth / mDraft) * (mWidth / mDraft));    // DNV2 formula for the area of the rudder in m²
+}
+void Ship::InitTriangles()
+{
+    sTriangle tri;
+    for (int i = 0; i < mF.rows(); ++i)
+    {
+        tri.I[0] = mF(i, 0);
+        tri.I[1] = mF(i, 1);
+        tri.I[2] = mF(i, 2);
+        vec3 u = mvVertices[tri.I[1]] - mvVertices[tri.I[0]];
+        vec3 v = mvVertices[tri.I[2]] - mvVertices[tri.I[0]];
+        vec3 a = glm::cross(v, u);
+        tri.Area = 0.5f * sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
+        tri.Normal = glm::normalize(a);
+        mvTris[i] = tri;
+    }
+}
+void Ship::InitCentroid()
+{
+    mCentroid = vec3(0.0f);
+    for (const auto& tri : mvTris)
+        mCentroid += mvVertices[tri.I[0]] + mvVertices[tri.I[1]] + mvVertices[tri.I[2]];
 
-    UpdateWorldMatrix();                        // Necessary for several calculations to come
+    if (mvTris.size())
+        mCentroid /= (mvTris.size() * 3.0f);
 
-    mvTris.resize(mF.rows());
-    GetTriangles();                             // Create the list of the triangles
-    GetCentroid();                              // Compute the centre of the volume
-    GetSurfaces();                              // Certain surfaces
-    GetVolume();                                // Total volume of the hull
-    GetMomentsOfInertia();                      // Compute all moments of inertia (Ixx, Iyy, Izz, Ixy, Ixz, Iyz)
-    
-    // Info to display with interface
-    ssHull << "Length/Width : " << std::fixed << std::setprecision(2) << mLength << " m x " << mWidth << " m " << endl;
-    ssHull << "Draft : " << std::fixed << std::setprecision(2) << mDraft << endl;
-    ssHull << "Mass : " << std::setprecision(0) << int(ship.Mass_t) << " t" << endl;
-    InfoHull = ssHull.str();
-   
-    GetWaterVertices();                         // Create the list of water vertices in the reference patch
-    CreateVAO();                                // Create the VAO of the colored hull
-    
+#ifdef PROPERTIES
+    cout << "Centroid : ( " << mCentroid.x << ", " << mCentroid.y << ", " << mCentroid.z << " )" << endl;
+#endif
+}
+void Ship::InitSurfaces()
+{
+    // Area
+    AreaXZ = mLength * mWidth;
+    // Cube root of the area in the XZ plane
+    AreaXZ_RacCub = pow(AreaXZ, 1.0f / 3.0f);
+    // Wet area
+    AreaWettedMax = 0.0f;
+    for (auto& tri : mvTris)
+        AreaWettedMax += tri.Area;
+
+#ifdef PROPERTIES   
+    cout << "Surface XZ : " << AreaXZ << " m2" << endl;
+    cout << "Surface : " << AreaWettedMax << " m2" << endl;
+#endif
+}
+void Ship::InitVolume()
+{
+    vec3 a, b, c;
+    mVolume = 0.0f;
+    for (auto& tri : mvTris)
+    {
+        a.x = mvVertices[tri.I[0]].x;
+        a.y = mvVertices[tri.I[0]].y;
+        a.z = mvVertices[tri.I[0]].z;
+
+        b.x = mvVertices[tri.I[1]].x;
+        b.y = mvVertices[tri.I[1]].y;
+        b.z = mvVertices[tri.I[1]].z;
+
+        c.x = mvVertices[tri.I[2]].x;
+        c.y = mvVertices[tri.I[2]].y;
+        c.z = mvVertices[tri.I[2]].z;
+
+        // Signed volume of this tetrahedron
+        mVolume += a.x * b.y * c.z + a.y * b.z * c.x + b.x * c.y * a.z - (c.x * b.y * a.z + b.x * a.y * c.z + c.y * b.z * a.x);
+    }
+    mVolume /= 6.0f;
+
+#ifdef PROPERTIES
+    cout << "Volume : " << mVolume << " m3" << endl;
+#endif
+}
+void Ship::InitInertia()
+{
+    mVolume = 0.0f;
+    Ixx = 0.0f;
+    Iyy = 0.0f;
+    Izz = 0.0f;
+    Ixy = 0.0f;
+    Ixz = 0.0f;
+    Iyz = 0.0f;
+
+    // Calculation of total volume and moments of inertia
+    for (const auto& tri : mvTris)
+    {
+        vec3 p0 = mvVertices[tri.I[0]];
+        vec3 p1 = mvVertices[tri.I[1]];
+        vec3 p2 = mvVertices[tri.I[2]];
+
+        float volume = std::abs(
+            (mCentroid.x - p2.x) * ((p0.y - p2.y) * (p1.z - p2.z) - (p1.y - p2.y) * (p0.z - p2.z)) -
+            (mCentroid.y - p2.y) * ((p0.x - p2.x) * (p1.z - p2.z) - (p1.x - p2.x) * (p0.z - p2.z)) +
+            (mCentroid.z - p2.z) * ((p0.x - p2.x) * (p1.y - p2.y) - (p1.x - p2.x) * (p0.y - p2.y))
+        ) / 6.0f;
+        mVolume += volume;
+
+        Ixx += (p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
+        Iyy += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
+        Izz += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y) * volume / 10.0f;
+
+        Ixy += (2 * p0.x * p0.y + 2 * p1.x * p1.y + 2 * p2.x * p2.y + p0.x * p1.y + p0.x * p2.y + p1.x * p0.y + p1.x * p2.y + p2.x * p0.y + p2.x * p1.y) * volume / 20.0f;
+        Ixz += (2 * p0.x * p0.z + 2 * p1.x * p1.z + 2 * p2.x * p2.z + p0.x * p1.z + p0.x * p2.z + p1.x * p0.z + p1.x * p2.z + p2.x * p0.z + p2.x * p1.z) * volume / 20.0f;
+        Iyz += (2 * p0.y * p0.z + 2 * p1.y * p1.z + 2 * p2.y * p2.z + p0.y * p1.z + p0.y * p2.z + p1.y * p0.z + p1.y * p2.z + p2.y * p0.z + p2.y * p1.z) * volume / 20.0f;
+    }
+
+    if (mVolume != 0.0f)
+    {
+        // Calculation of density
+        float densite = mMass / mVolume;
+
+        // Adjustment of moments of inertia relative to the barycenter
+        Ixx = densite * Ixx - mMass * (ship.PosGravity.y * ship.PosGravity.y + ship.PosGravity.z * ship.PosGravity.z);
+        Iyy = densite * Iyy - mMass * (ship.PosGravity.x * ship.PosGravity.x + ship.PosGravity.z * ship.PosGravity.z);
+        Izz = densite * Izz - mMass * (ship.PosGravity.x * ship.PosGravity.x + ship.PosGravity.y * ship.PosGravity.y);
+        Ixy = densite * Ixy + mMass * ship.PosGravity.x * ship.PosGravity.y;
+        Ixz = densite * Ixz + mMass * ship.PosGravity.x * ship.PosGravity.z;
+        Iyz = densite * Iyz + mMass * ship.PosGravity.y * ship.PosGravity.z;
+    }
+
+#ifdef PROPERTIES
+    // Displaying results
+    cout << "============================" << endl;
+    cout << "Moments d'inertie volumiques" << endl;
+    cout << "Volume total : " << mVolume << " m3" << endl;
+    cout << "Ixx = " << Ixx << " kg/m2" << endl;
+    cout << "Iyy = " << Iyy << " kg/m2" << endl;
+    cout << "Izz = " << Izz << " kg/m2" << endl;
+    cout << "Ixy = " << Ixy << " kg/m2" << endl;
+    cout << "Ixz = " << Ixz << " kg/m2" << endl;
+    cout << "Iyz = " << Iyz << " kg/m2" << endl;
+    cout << endl;
+#endif
+}
+void Ship::InitWaterVertices()
+{
+    // Positions
+    for (int z = 0; z <= mOcean->MESH_SIZE; ++z)
+    {
+        vector<vec3> vPos;
+        for (int x = 0; x <= mOcean->MESH_SIZE; ++x)
+        {
+            int index = z * mOcean->MESH_SIZE_1 + x;
+            vec3 v;
+            v.x = (x - mOcean->MESH_SIZE / 2.0f) * mOcean->PATCH_SIZE / mOcean->MESH_SIZE;
+            v.y = 0.0f;
+            v.z = (z - mOcean->MESH_SIZE / 2.0f) * mOcean->PATCH_SIZE / mOcean->MESH_SIZE;
+            vPos.push_back(v);
+        }
+        mvWaterPos.push_back(vPos);
+    }
+}
+void Ship::InitVaoHull()
+{
+    // Converting mvVertices, Normals and Colors
+    mvVertexColored = vector<float>(mvTris.size() * 3 * 6);
+    int index = 0;
+    for (const auto& tri : mvTris)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            // Position
+            mvVertexColored[index++] = mvVertices[tri.I[j]].x;   // x
+            mvVertexColored[index++] = mvVertices[tri.I[j]].y;   // y
+            mvVertexColored[index++] = mvVertices[tri.I[j]].z;   // z
+
+            // Color
+            mvVertexColored[index++] = tri.Color.r;   // r
+            mvVertexColored[index++] = tri.Color.g;   // g
+            mvVertexColored[index++] = tri.Color.b;   // b
+        }
+    }
+
+    // Generation of mvIndices
+    vector<unsigned int> indices(mF.rows() * 3);
+    for (unsigned int i = 0; i < indices.size(); ++i)
+        indices[i] = i;
+    mIndicesFull = indices.size();
+
+    glGenVertexArrays(1, &mVaoHull);
+    glGenBuffers(1, &mVboHull);
+    glGenBuffers(1, &mEboHull);
+
+    glBindVertexArray(mVaoHull);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mVboHull);
+    glBufferData(GL_ARRAY_BUFFER, mvVertexColored.size() * sizeof(float), mvVertexColored.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEboHull);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+    // Configuring vertex attributes
+
+    // Position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    // Color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+void Ship::InitContours()
+{
     // Contour
     vector<vec3> contour = ComputeContour();    // Intersect the mesh with the ocean (Y = 0)
     contour = ArrangeContour(contour);          // Sort the points
     CreateContourVAO1(contour);                 // Create the first contour which has the size of the ship
+
+    vector<vec3> contourSpray = OffsetContour(contour, 0.05f);
+    InitSpray(contourSpray);
+
     contour = OffsetContour(contour, 1.0f);     // Expand the contour with a constant offset
     CreateContourVAO2(contour);                 // Create the second contour which is expanded
     CreateTexWake(contour);                     // Create the texture formed with foam inside the exapnded contour
-
+}
+void Ship::InitShaders()
+{
     // Shaders for the ship
     mShaderHullColored = make_unique<Shader>("Resources/Ship/hull_colored.vert", "Resources/Ship/hull_colored.frag");       // For the hull (colored triangles for Archimede)
     mShaderWireframe = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag", "Resources/Shaders/unicolor.geom");
@@ -149,19 +409,16 @@ void Ship::Init(sShip& ship, Camera& camera)
     mShaderShip = make_unique<Shader>("Resources/Ship/ship.vert", "Resources/Ship/ship.frag");                              // Enhanced shader for the ship model
     mShaderUnicolor = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");            // For bounding box & contours
     mShaderNavLight = make_unique<Shader>("Resources/Ship/ship_light.vert", "Resources/Ship/ship_light.frag");              // For the navigation lights of the ship
-    
+
     // Shaders for the wake
     mShaderBuffer = make_unique<Shader>("Resources/Ship/wake_buffer.vert", "Resources/Ship/wake_buffer.frag");              // Wake as an accumulation buffer
-    
     mShaderWakeVaoToTex = make_unique<Shader>("Resources/Ship/wake_vao.vert", "Resources/Ship/wake_vao.frag");              // Wake as a projection of VAO on texture
     mShaderGaussH = make_unique<Shader>("Resources/Ship/wake_gauss.vert", "Resources/Ship/wake_gauss_h.frag");              // Gaussian blur - horizontal pass (1)
     mShaderGaussV = make_unique<Shader>("Resources/Ship/wake_gauss.vert", "Resources/Ship/wake_gauss_v.frag");              // Gaussian blur - vertical pass (2)
-    
     mShaderWakeVao = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");             // For the drawing of the vao (as a debug)
-
-    // Wake
-    CreateWakeVao();
-
+}
+void Ship::InitTextures()
+{
     mTexWake = make_unique<Texture>();
     mTexWake->CreateFromFile("Resources/Ocean/seamless-seawater-with-foam-1.jpg");
     glBindTexture(GL_TEXTURE_2D, mTexWake->id);
@@ -249,12 +506,29 @@ void Ship::Init(sShip& ship, Camera& camera)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    //========================================================================
-    
     // Create environment map
     mTexEnvironment = make_unique<Texture>();
     mTexEnvironment->CreateFromDDSFile("Resources/Ocean/ocean_env.dds");
+}
+void Ship::InitVaoWake()
+{
+    glGenVertexArrays(1, &mVaoWake);
 
+    glGenBuffers(1, &mVboWake);
+    glBindVertexArray(mVaoWake);
+    glBindBuffer(GL_ARRAY_BUFFER, mVboWake);
+    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+    // position (3 floats)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(sFoamVertex), (void*)offsetof(sFoamVertex, pos));
+    // alpha (1 float)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(sFoamVertex), (void*)offsetof(sFoamVertex, alpha));
+
+    glBindVertexArray(0);
+}
+void Ship::InitModels()
+{
     // Models
     mModelFull = make_unique<Model>(ship.PathnameFull);
     stringstream ssFull;
@@ -263,7 +537,8 @@ void Ship::Init(sShip& ship, Camera& camera)
     mPropeller = make_unique<Model>(ship.PathnamePropeller);
     mRudder = make_unique<Model>(ship.PathnameRudder);
     mRadar1 = make_unique<Model>(ship.PathnameRadar1);
-    mRadar2 = make_unique<Model>(ship.PathnameRadar2);
+    if (ship.nRadar > 1)
+        mRadar2 = make_unique<Model>(ship.PathnameRadar2);
 
     sBBvec3 bb = mModelFull->calculateBoundingBox();
     BBoxShape = make_unique<BBox>(bb.min, bb.max);
@@ -272,7 +547,9 @@ void Ship::Init(sShip& ship, Camera& camera)
     mForceApplication = make_unique<Sphere>(0.1f, 16);
     mAxis = make_unique<Cube>();
     mLight = make_unique<Sphere>(0.1f, 16);
-
+}
+void Ship::InitSounds(Camera& camera)
+{
     // Sounds
     g_SoundMgr->setListenerPosition(camera.GetPosition());
     g_SoundMgr->setListenerOrientation(camera.GetAt(), camera.GetUp());
@@ -291,248 +568,210 @@ void Ship::Init(sShip& ship, Camera& camera)
         mSoundBowThruster->setLooping(true);
         mSoundBowThruster->adjustDistances();
     }
-
-    // Particles
-	mSmokeLeft = make_unique<Smoke>();
-    if (this->ship.nChimney == 2) mSmokeRight = make_unique<Smoke>();
-
-    ResetVelocities();
-    bMotion = false;
-    bSound = true;
 }
-void Ship::SetOcean(Ocean* ocean)
-{ 
-    mOcean = ocean; 
-    pDisplacement = ocean->GetPixelsDisplacement(); 
-};
-void Ship::GetTriangles()
+void Ship::InitSmoke()
 {
-    sTriangle tri;
-    for (int i = 0; i < mF.rows(); ++i)
-    {
-        tri.I[0] = mF(i, 0);
-        tri.I[1] = mF(i, 1);
-        tri.I[2] = mF(i, 2);
-        vec3 u = mvVertices[tri.I[1]] - mvVertices[tri.I[0]];
-        vec3 v = mvVertices[tri.I[2]] - mvVertices[tri.I[0]];
-        vec3 a = glm::cross(v, u);
-        tri.Area = 0.5f * sqrtf(a.x * a.x + a.y * a.y + a.z * a.z);
-        tri.Normal = glm::normalize(a);
-        mvTris[i] = tri;
-    }
-}
-void Ship::GetCentroid()
-{
-    mCentroid = vec3(0.0f);
-    for (const auto& tri : mvTris)
-        mCentroid += mvVertices[tri.I[0]] + mvVertices[tri.I[1]] + mvVertices[tri.I[2]];
-    
-    if(mvTris.size())
-        mCentroid /= (mvTris.size() * 3.0f);
+    // Initialize array of "dead" particles
+    vector<ParticleGPU> particles(mSmokeMaxParticles);
 
-#ifdef PROPERTIES
-    cout << "Centroid : ( " << mCentroid.x << ", " << mCentroid.y << ", " << mCentroid.z << " )" << endl;
-#endif
-}
-void Ship::GetSurfaces()
-{
-    // Area
-    AreaXZ = mLength * mWidth;
-    // Cube root of the area in the XZ plane
-    AreaXZ_RacCub = pow(AreaXZ, 1.0f / 3.0f);
-    // Wet area
-    AreaWettedMax = 0.0f;
-    for (auto& tri : mvTris)
-        AreaWettedMax += tri.Area;
+    for (int i = 0; i < mSmokeMaxParticles; ++i)
+        particles[i].life = 0.0f; // dead at the start
 
-#ifdef PROPERTIES   
-    cout << "Surface XZ : " << AreaXZ << " m2" << endl;
-    cout << "Surface : " << AreaWettedMax << " m2" << endl;
-#endif
-}
-void Ship::GetVolume()
-{
-    vec3 a, b, c;
-    mVolume = 0.0f;
-    for (auto& tri : mvTris)
-    {
-        a.x = mvVertices[tri.I[0]].x;
-        a.y = mvVertices[tri.I[0]].y;
-        a.z = mvVertices[tri.I[0]].z;
+    // Generate and allocate SSBO
+    glGenBuffers(1, &mSSBO_SMOKE);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSSBO_SMOKE);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, mSmokeMaxParticles * sizeof(ParticleGPU), particles.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mSSBO_SMOKE);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        b.x = mvVertices[tri.I[1]].x;
-        b.y = mvVertices[tri.I[1]].y;
-        b.z = mvVertices[tri.I[1]].z;
-
-        c.x = mvVertices[tri.I[2]].x;
-        c.y = mvVertices[tri.I[2]].y;
-        c.z = mvVertices[tri.I[2]].z;
-
-        // Signed volume of this tetrahedron
-        mVolume += a.x * b.y * c.z + a.y * b.z * c.x + b.x * c.y * a.z - (c.x * b.y * a.z + b.x * a.y * c.z + c.y * b.z * a.x);
-    }
-    mVolume /= 6.0f;
-
-#ifdef PROPERTIES
-    cout << "Volume : " << mVolume << " m3" << endl;
-#endif
-}
-void Ship::GetMomentsOfInertia()
-{
-    mVolume = 0.0f;
-    Ixx = 0.0f;
-    Iyy = 0.0f;
-    Izz = 0.0f;
-    Ixy = 0.0f;
-    Ixz = 0.0f;
-    Iyz = 0.0f;
-
-    // Calculation of total volume and moments of inertia
-    for (const auto& tri : mvTris)
-    {
-        vec3 p0 = mvVertices[tri.I[0]];
-        vec3 p1 = mvVertices[tri.I[1]];
-        vec3 p2 = mvVertices[tri.I[2]];
-
-        float volume = std::abs(
-            (mCentroid.x - p2.x) * ((p0.y - p2.y) * (p1.z - p2.z) - (p1.y - p2.y) * (p0.z - p2.z)) -
-            (mCentroid.y - p2.y) * ((p0.x - p2.x) * (p1.z - p2.z) - (p1.x - p2.x) * (p0.z - p2.z)) +
-            (mCentroid.z - p2.z) * ((p0.x - p2.x) * (p1.y - p2.y) - (p1.x - p2.x) * (p0.y - p2.y))
-        ) / 6.0f;
-        mVolume += volume;
-
-        Ixx += (p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
-        Iyy += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
-        Izz += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y) * volume / 10.0f;
-
-        Ixy += (2 * p0.x * p0.y + 2 * p1.x * p1.y + 2 * p2.x * p2.y + p0.x * p1.y + p0.x * p2.y + p1.x * p0.y + p1.x * p2.y + p2.x * p0.y + p2.x * p1.y) * volume / 20.0f;
-        Ixz += (2 * p0.x * p0.z + 2 * p1.x * p1.z + 2 * p2.x * p2.z + p0.x * p1.z + p0.x * p2.z + p1.x * p0.z + p1.x * p2.z + p2.x * p0.z + p2.x * p1.z) * volume / 20.0f;
-        Iyz += (2 * p0.y * p0.z + 2 * p1.y * p1.z + 2 * p2.y * p2.z + p0.y * p1.z + p0.y * p2.z + p1.y * p0.z + p1.y * p2.z + p2.y * p0.z + p2.y * p1.z) * volume / 20.0f;
-    }
-
-    if (mVolume != 0.0f)
-    {
-        // Calculation of density
-        float densite = mMass / mVolume;
-
-        // Adjustment of moments of inertia relative to the barycenter
-        Ixx = densite * Ixx - mMass * (ship.PosGravity.y * ship.PosGravity.y + ship.PosGravity.z * ship.PosGravity.z);
-        Iyy = densite * Iyy - mMass * (ship.PosGravity.x * ship.PosGravity.x + ship.PosGravity.z * ship.PosGravity.z);
-        Izz = densite * Izz - mMass * (ship.PosGravity.x * ship.PosGravity.x + ship.PosGravity.y * ship.PosGravity.y);
-        Ixy = densite * Ixy + mMass * ship.PosGravity.x * ship.PosGravity.y;
-        Ixz = densite * Ixz + mMass * ship.PosGravity.x * ship.PosGravity.z;
-        Iyz = densite * Iyz + mMass * ship.PosGravity.y * ship.PosGravity.z;
-    }
-
-#ifdef PROPERTIES
-    // Displaying results
-    cout << "============================" << endl;
-    cout << "Moments d'inertie volumiques" << endl;
-    cout << "Volume total : " << mVolume << " m3" << endl;
-    cout << "Ixx = " << Ixx << " kg/m2" << endl;
-    cout << "Iyy = " << Iyy << " kg/m2" << endl;
-    cout << "Izz = " << Izz << " kg/m2" << endl;
-    cout << "Ixy = " << Ixy << " kg/m2" << endl;
-    cout << "Ixz = " << Ixz << " kg/m2" << endl;
-    cout << "Iyz = " << Iyz << " kg/m2" << endl;
-    cout << endl;
-#endif
-}
-void Ship::GetWaterVertices()
-{
-    // Positions
-    for (int z = 0; z <= mOcean->MESH_SIZE; ++z)
-    {
-        vector<vec3> vPos;
-        for (int x = 0; x <= mOcean->MESH_SIZE; ++x)
-        {
-            int index = z * mOcean->MESH_SIZE_1 + x;
-            vec3 v;
-            v.x = (x - mOcean->MESH_SIZE / 2.0f) * mOcean->PATCH_SIZE / mOcean->MESH_SIZE;
-            v.y = 0.0f;
-            v.z = (z - mOcean->MESH_SIZE / 2.0f) * mOcean->PATCH_SIZE / mOcean->MESH_SIZE;
-            vPos.push_back(v);
-        }
-        mvWaterPos.push_back(vPos);
-    }
-}
-void Ship::CreateVAO()
-{
-    // Converting mvVertices, Normals and Colors
-    mvVertexColored = vector<float>(mvTris.size() * 3 * 6);
-    int index = 0;
-    for (const auto& tri : mvTris)
-    {
-        for (int j = 0; j < 3; ++j)
-        {
-            // Position
-            mvVertexColored[index++] = mvVertices[tri.I[j]].x;   // x
-            mvVertexColored[index++] = mvVertices[tri.I[j]].y;   // y
-            mvVertexColored[index++] = mvVertices[tri.I[j]].z;   // z
-
-            // Color
-            mvVertexColored[index++] = tri.Color.r;   // r
-            mvVertexColored[index++] = tri.Color.g;   // g
-            mvVertexColored[index++] = tri.Color.b;   // b
-        }
-    }
-
-    // Generation of mvIndices
-    vector<unsigned int> indices(mF.rows() * 3);
-    for (unsigned int i = 0; i < indices.size(); ++i)
-        indices[i] = i;
-    mIndicesFull = indices.size();
-
-    glGenVertexArrays(1, &mVao);
-    glGenBuffers(1, &mVbo);
-    glGenBuffers(1, &mEbo);
-
-    glBindVertexArray(mVao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
-    glBufferData(GL_ARRAY_BUFFER, mvVertexColored.size() * sizeof(float), mvVertexColored.data(), GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEbo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-    // Configuring vertex attributes
-
-    // Position
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    // Color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // VAO setup for drawing points
+    glGenVertexArrays(1, &mVaoSmoke);
+    glBindVertexArray(mVaoSmoke);
+    // No attributes needed, data will be read into vertex shader via SSBO
     glBindVertexArray(0);
-}
-void Ship::CreatePressureLinesVAO()
-{
-    float coeff = 0.001f * (200000.0f / mMass) * (6000.0 / mF.rows());
 
-    vector<vec3> linePoints;
-    for (auto& tri : mvTris)
+#ifdef DEBUG_SMOKE
+    glGenBuffers(1, &SSBO_LIVE_COUNTER);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO_LIVE_COUNTER);
+    int zero = 0;
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(int), &zero, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+#endif
+
+    mShaderSmokeCompute = make_unique<Shader>("", "", "", "Resources/Ship/smoke.comp");
+    mShaderSmokeRender = make_unique<Shader>("Resources/Ship/smoke.vert", "Resources/Ship/smoke.frag");
+}
+void FilterClosePoints(std::vector<sSprayPt>& pts)
+{
+    if (pts.size() < 2)
+        return;
+
+    float totalDist = glm::length(pts.front().p - pts.back().p);
+    float threshold = totalDist / pts.size();
+
+    // nouvelle liste filtrée
+    std::vector<sSprayPt> filtered;
+    filtered.reserve(pts.size());
+
+    filtered.push_back(pts[0]); // toujours garder le premier point
+    glm::vec3 lastPos = pts[0].p;
+
+    for (size_t i = 1; i < pts.size(); ++i)
     {
-        if (tri.WaterStatus != 0) // at least, 1 pt under water
+        float dist = glm::length(pts[i].p - lastPos);
+        if (dist >= threshold)
         {
-            linePoints.push_back(tri.CoG);
-            linePoints.push_back(tri.CoG - tri.Normal * tri.fPressure * coeff);
+            filtered.push_back(pts[i]);
+            lastPos = pts[i].p;
+        }
+        // sinon on ignore le point trop proche
+    }
+
+    pts = std::move(filtered);
+}
+void Ship::InitSpray(vector<vec3>& contour)
+{
+    if (contour.size() == 0)
+        return;
+
+    float maxForward = contour[0].x;
+    int frontIndex = 0;
+    for (int i = 1; i < (int)contour.size(); i++)
+    {
+        if (contour[i].x > maxForward)
+        {
+            maxForward = contour[i].x;
+            frontIndex = i;
         }
     }
-    mLinesCount = linePoints.size();
 
-    GLuint VBO;
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, linePoints.size() * sizeof(vec3), linePoints.data(), GL_STATIC_DRAW);
+    vec3 frontPoint = contour[frontIndex];
 
-    glGenVertexArrays(1, &mVaoLines);
-    glBindVertexArray(mVaoLines);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
+    mLeft.clear();
+    mRight.clear();
 
-    glEnableVertexAttribArray(0);
+    float dist = mLength * ship.SprayLength;
+
+    for (size_t i = 0; i < contour.size(); ++i)
+    {
+        vec3 p = contour[i];
+        float d = glm::length(p - frontPoint);
+
+        if (d <= dist)
+        {
+            // Find the point before and the point after on the contour
+            int idxPrev = (i == 0) ? (int)contour.size() - 1 : (int)i - 1;
+            int idxNext = (i == contour.size() - 1) ? 0 : (int)i + 1;
+
+            vec3 prev = contour[idxPrev];
+            vec3 next = contour[idxNext];
+
+            // Tangent vector (direction of the contour at point p)
+            vec3 tangent = glm::normalize(next - prev);
+
+            // For the x/z plane: take the outside
+            vec3 toPrev = prev - p;
+            vec3 toNext = next - p;
+            // Lateral vector in the plane (here (toNext - toPrev))
+            vec3 lateral = toNext - toPrev;
+            // Normal: perpendicular to tangent, oriented outward
+            vec3 n = glm::normalize(glm::cross(tangent, vec3(0, 1, 0)));
+
+            // We want n.z to have the same sign as p.z 
+            if ((p.z < 0.0f && n.z < 0.0f) || (p.z > 0.0f && n.z > 0.0f))
+            {
+                // n already on the right side
+            }
+            else
+                n = -n;
+
+            sSprayPt pt;
+            pt.p = p;
+            pt.n = n;
+
+            if (p.z < 0.0f)
+                mLeft.push_back(pt);
+            else if (p.z > 0.0f)
+                mRight.push_back(pt);
+        }
+    }
+
+    // Comparator to sort in ascending order of distance on the X axis from frontPoint
+    auto compareNearToFarX = [frontPoint](const sSprayPt& a, const sSprayPt& b) {
+        float distA = frontPoint.x - a.p.x;  // the "distance" in x from frontPoint
+        float distB = frontPoint.x - b.p.x;
+        return distA < distB;
+        };
+
+    std::sort(mLeft.begin(), mLeft.end(), compareNearToFarX);
+    std::sort(mRight.begin(), mRight.end(), compareNearToFarX);
+
+    FilterClosePoints(mLeft);
+    FilterClosePoints(mRight);
+
+    if (mLeft.size() > 1 && mRight.size() > 1)
+    {
+        mRandomOffsetRange = 0.0f;
+        for (size_t i = 0; i < mLeft.size() - 1; ++i)
+            mRandomOffsetRange += glm::length(mLeft[i + 1].p - mLeft[i].p);
+
+        for (size_t i = 0; i < mRight.size() - 1; ++i)
+            mRandomOffsetRange += glm::length(mRight[i + 1].p - mRight[i].p);
+
+        mRandomOffsetRange /= (mLeft.size() - 1 + mRight.size() - 1);
+        mRandomOffsetRange *= 0.5f;
+    }
 }
+
+GLuint	Ship::GetTraceID() 
+{ 
+#ifdef TRACE
+    if (mTexTrace[mTraceIdx])
+        return mTexTrace[mTraceIdx]; 
+#endif
+    return 0;
+}
+void Ship::InitTrace()
+{
+    mTexTrace = new unsigned int[2];
+    glGenTextures(2, mTexTrace);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, mTexTrace[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, TEX_SIZE, TEX_SIZE, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    mShaderTrace = make_unique<Shader>("", "", "", "Resources/Ship/trace.comp");
+}
+void Ship::UpdateTrace()
+{
+    static int prevX = ship.Position.x;
+    static int prevZ = ship.Position.z;
+
+    int dx = std::roundf(ship.Position.x) - prevX;
+    int dz = std::roundf(ship.Position.z) - prevZ;
+
+    prevX = std::roundf(ship.Position.x);
+    prevZ = std::roundf(ship.Position.z);
+
+    glBindImageTexture(0, mTexTrace[mTraceIdx], 0, GL_FALSE, 0, GL_READ_ONLY, GL_R8);
+    glBindImageTexture(1, mTexTrace[1 - mTraceIdx], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R8);
+
+    mShaderTrace->use();
+    mShaderTrace->setInt("dx", dx);
+    mShaderTrace->setInt("dz", dz);
+
+    glDispatchCompute(512 / 16, 512 / 16, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+    mTraceIdx = 1 - mTraceIdx;
+}
+
 
 // Contour
 vector<vec3> Ship::ComputeContour()
@@ -762,6 +1001,11 @@ void Ship::CreateTexWake(const vector<vec3>& contour)
             mask[j * TexContourShipW + i] = bias;
         }
     }
+    if (TexContourShip)
+    {
+        glDeleteTextures(1, &TexContourShip);
+        TexContourShip = 0;
+    }
 
     glGenTextures(1, &TexContourShip);
     glBindTexture(GL_TEXTURE_2D, TexContourShip);
@@ -778,6 +1022,14 @@ void Ship::CreateTexWake(const vector<vec3>& contour)
 }
 void Ship::CreateContourVAO1(vector<vec3>& contour)
 {
+    if (mVaoContour1)
+    {
+        glDeleteVertexArrays(1, &mVaoContour1);
+        mVaoContour1 = 0;
+        glDeleteBuffers(1, &mVboContour1);
+        mVboContour1 = 0;
+    }
+
     glGenVertexArrays(1, &mVaoContour1);
     glGenBuffers(1, &mVboContour1);
 
@@ -795,6 +1047,14 @@ void Ship::CreateContourVAO1(vector<vec3>& contour)
 }
 void Ship::CreateContourVAO2(vector<vec3>& contour)
 {
+    if (mVaoContour2)
+    {
+        glDeleteVertexArrays(1, &mVaoContour2);
+        mVaoContour2 = 0;
+        glDeleteBuffers(1, &mVboContour2);
+        mVboContour2 = 0;
+    }
+
     glGenVertexArrays(1, &mVaoContour2);
     glGenBuffers(1, &mVboContour2);
 
@@ -884,6 +1144,7 @@ int Ship::GetHeightFast(vec3& pos)
         z -= mOcean->MESH_SIZE;
         posR.z -= mOcean->PATCH_SIZE;
     }
+
 
     int n = 0;
     int index;
@@ -1030,9 +1291,9 @@ void Ship::UpdateWorldMatrix()
 {
     World = mat4(1.0f);
     World = glm::translate(World, ship.Position);
-    World = glm::rotate(World, Yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-    World = glm::rotate(World, Roll, glm::vec3(1.0f, 0.0f, 0.0f));
-    World = glm::rotate(World, Pitch, glm::vec3(0.0f, 0.0f, 1.0f));
+    World = glm::rotate(World, Yaw, vec3(0.0f, 1.0f, 0.0f));
+    World = glm::rotate(World, Roll, vec3(1.0f, 0.0f, 0.0f));
+    World = glm::rotate(World, Pitch, vec3(0.0f, 0.0f, 1.0f));
 }
 void Ship::ResetVelocities()
 {
@@ -1064,12 +1325,6 @@ vec3 Ship::TransformVector(vec3 v)
 {
     return vec3(World * vec4(v, 0.0f));
 }
-void Ship::GetHDG()
-{
-    HDG = fmod(450.0f - glm::degrees(Yaw), 360.0f);
-    while (HDG < 0.0f)      HDG += 360.0f;
-    while (HDG > 360.0f)    HDG -= 360.0f;
-}
 void Ship::SetYawFromHDG(float hdg)
 {
     float deg_Yaw = fmod(450.0f - hdg, 360.0f);
@@ -1077,29 +1332,11 @@ void Ship::SetYawFromHDG(float hdg)
         deg_Yaw += 360.0f;
     Yaw = glm::radians(deg_Yaw);
 }
-void Ship::GetBoundingBox()
-{
-    mBbox.min = vec3(FLT_MAX);
-    mBbox.max = vec3(FLT_MIN);
-
-    if (mvVertices.size() > 0)
-    {
-        for (auto& v : mvVertices)
-        {
-            mBbox.min = glm::min(mBbox.min, v);
-            mBbox.max = glm::max(mBbox.max, v);
-        }
-	}
-    else
-    {
-        mBbox.min = vec3(0.0f);
-        mBbox.max = vec3(0.0f);
-    }
-}
 void Ship::GetHeightOfAllVertices()
 {
     int nSearch = 0;
     vec3 pWater;
+
     for (unsigned int i = 0; i < mvVertices.size(); i++)
     {
         pWater = mvVertices[i];
@@ -1143,14 +1380,194 @@ void Ship::GetTrisUnderWater()
             mvVertexColored[index++] = tri.Color.b;   // b
         }
     }
-    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, mVboHull);
     glBufferSubData(GL_ARRAY_BUFFER, 0, mvVertexColored.size() * sizeof(float), mvVertexColored.data());
 }
 
-// Compute forces
+// True Kelvin wake
+constexpr int IMAGE_HEIGHT = 1024;
+constexpr int IMAGE_WIDTH = 512;
+constexpr int IMAGE_WIDTH_2SIDES = 2 * IMAGE_WIDTH;
+constexpr float MAX_Y_TILDE = 10.0f;
+constexpr float PI = 3.14159265358979323846f;
+float pressure_field(float theta, float FR)
+{
+    // Adaptation de pressure_field
+
+    float K0_inv = (FR * std::cos(theta)) * (FR * std::cos(theta));
+    float denom = 2.0f * M_PI * K0_inv;
+    float exponent = -1.0f / (denom * denom);
+    return std::exp(exponent);
+}
+float fonction_a_integrer(float theta, float x_tilde, float y_tilde, float froude_nbr)
+{
+    // Fonction sous intégrale (fonction_a_integrer)
+
+    float sin_num = 2.0f * M_PI * (std::cos(theta) * x_tilde - std::sin(theta) * y_tilde);
+    float sin_den = std::pow(std::cos(theta), 2);
+    float numerator = std::sin(sin_num / sin_den);
+    float denominator = std::pow(std::cos(theta), 4);
+
+    return pressure_field(theta, froude_nbr) * numerator / denominator;
+}
+float integrate(std::function<float(float)> f, float a, float b, int n = 1000)
+{
+    // Intégration numérique simple par méthode des trapèzes
+
+    float h = (b - a) / n;
+    float sum = 0.5f * (f(a) + f(b));
+    for (int i = 1; i < n; ++i)
+    {
+        float x = a + i * h;
+        sum += f(x);
+    }
+    return sum * h;
+}
+float surface_displacement(float x_tilde, float y_tilde, float froude_nbr)
+{
+    // surface_displacement
+
+    // Rotation 90 degrés
+    std::swap(x_tilde, y_tilde);
+
+    auto integrand = [&](float theta) {
+        return fonction_a_integrer(theta, x_tilde, y_tilde, froude_nbr);
+        };
+
+    float val = integrate(integrand, -M_PI_2, M_PI_2, 1000);
+    return -val;
+}
+void wake_simulation(float froude_nbr, vector<float>& buffer)
+{
+    // Calcul de la simulation entière dans un buffer 2D
+
+    // Vous pouvez éventuellement gérer les masques, offsets, symétries ici
+    buffer.resize(IMAGE_HEIGHT * IMAGE_WIDTH);
+
+    float subpixel_nbr = IMAGE_HEIGHT / MAX_Y_TILDE;
+    int y_offset = -44;// static_cast<int>(IMAGE_HEIGHT * 0.05f); // ex: offset vertical
+
+    for (int y_img = 0; y_img < IMAGE_HEIGHT; ++y_img)
+    {
+        for (int x_img = 0; x_img < IMAGE_WIDTH; ++x_img)
+        {
+            float x_tilde = x_img / subpixel_nbr;
+            float y_tilde = (y_img - y_offset) / subpixel_nbr;
+            buffer[y_img * IMAGE_WIDTH + x_img] = surface_displacement(x_tilde, y_tilde, froude_nbr);
+        }
+    }
+}
+void normalizeBuffer(vector<float>& buffer) 
+{
+    if (buffer.empty()) return;
+
+    // Trouver min, max et moyenne actuelle
+    float min_val = FLT_MAX;
+    float max_val = FLT_MIN;
+    double sum = 0.0;
+
+    for (float v : buffer) 
+    {
+        if (v < min_val) min_val = v;
+        if (v > max_val) max_val = v;
+        sum += v;
+    }
+
+    float range = max_val - min_val;
+    if (range == 0) 
+    {
+        // Toute valeur identique, on met à 0.5
+        for (auto& v : buffer) v = 0.5f;
+        return;
+    }
+
+    double mean = sum / buffer.size();
+
+    // Étape 1 : normaliser entre 0 et 1
+    for (auto& v : buffer) 
+        v = (v - min_val) / range;
+
+    // Étape 2 : ajuster pour que la moyenne soit à 0.5
+    // Calculer la moyenne après normalisation
+    double new_sum = 0.0;
+    for (float v : buffer) 
+    {
+        new_sum += v;
+    }
+
+    double new_mean = new_sum / buffer.size();
+
+    // Décalage nécessaire pour que la moyenne soit 0.5
+    float offset = 0.5f - static_cast<float>(new_mean);
+
+    for (auto& v : buffer) 
+    {
+        v += offset;
+        // Clamper entre 0 et 1
+        if (v < 0.0f) v = 0.0f;
+        else if (v > 1.0f) v = 1.0f;
+    }
+}
+void Ship::CreateKelvinImages()
+{
+    GLuint kelvinTex3;
+    glGenTextures(1, &kelvinTex3);
+    glBindTexture(GL_TEXTURE_2D, kelvinTex3);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 0, GL_RED, GL_FLOAT, nullptr);
+    
+    for (int fr = 1; fr < 101; fr++)
+    {
+        vector<float> buffer;
+        float froude = 0.01f * fr;
+        wake_simulation(froude, buffer);
+        normalizeBuffer(buffer);
+
+        // Préparation d'un buffer complet avec les deux côtés
+        vector<float> buffer_two_sides(IMAGE_HEIGHT * IMAGE_WIDTH_2SIDES);
+        for (int y = 0; y < IMAGE_HEIGHT; ++y)
+        {
+            for (int x = 0; x < IMAGE_WIDTH_2SIDES; ++x)
+            {
+                if (x < IMAGE_WIDTH)
+                {
+                    // Partie miroir à gauche : miroir horizontal de la bordure gauche de l'image originelle
+                    int mirror_x = IMAGE_WIDTH - 1 - x;
+                    buffer_two_sides[y * IMAGE_WIDTH_2SIDES + x] = buffer[y * IMAGE_WIDTH + mirror_x];
+                }
+                else
+                {
+                    // Partie originale à droite, placée à partir de IMAGE_WIDTH
+                    int original_x = x - IMAGE_WIDTH;
+                    buffer_two_sides[y * IMAGE_WIDTH_2SIDES + x] = buffer[y * IMAGE_WIDTH + original_x];
+                }
+            }
+        }
+
+        string name;
+        if (fr == 100)
+            name = "Outputs/Kelvin-1024_Fr-100.png";
+        else if (fr < 10)
+            name = "Outputs/Kelvin-1024_Fr-00" + to_string(fr) + ".png";
+        else
+            name = "Outputs/Kelvin-1024_Fr-0" + to_string(fr) + ".png";
+
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 0, GL_RED, GL_FLOAT, buffer_two_sides.data());
+        SaveTexture2D(kelvinTex3, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 1, GL_RED, name);
+    }
+}
+
+// Update
 void Ship::Update(float time)
 {
     if (g_bPause)
+        return;
+
+    if (!bVisible)
         return;
 
     static float prevTime = 0.0f;
@@ -1179,20 +1596,24 @@ void Ship::Update(float time)
     ComputeCentrifugal(dt);
     // Result
     ComputeForces(dt);
-    // Sounds
+   
     UpdateSounds();
-
     UpdateSmoke(dt);
-    ComputeAutopilot(dt);
+    UpdateSpray(dt);
+    UpdateAutopilot(dt);
 
     if (bPressure)
-        CreatePressureLinesVAO();
+        UpdateVaoPressureLines();
 
     UpdateWakeVao();
-    if(bVAO)
+    if(bTexWakeByVAO)
         UpdateTextureWakeVao();
     else
         UpdateWakeBuffer();
+
+#ifdef TRACE
+    UpdateTrace();
+#endif
 
     VariationYawSigned = (Yaw - prevYaw) / dt;
     YawRate = fabs(Yaw - prevYaw) / dt;   // rad/s
@@ -1279,7 +1700,7 @@ void Ship::ComputeGravity()
 void Ship::ComputeHeave(float dt)
 {
     // Force which resist to the couple Archimede / Gravity
-    ResistanceHeave.Magnitude = mMass * HeaveVelocity * AreaXZ_RacCub * AreaWetted / AreaWettedMax;
+    ResistanceHeave.Magnitude = ship.HeavePerf * mMass * HeaveVelocity * AreaXZ_RacCub * AreaWetted / AreaWettedMax;
     if (Archimede.Magnitude > Gravity.Magnitude)    ResistanceHeave.Vector = TransformVector(vec3(0.0f, -ResistanceHeave.Magnitude, 0.0f));
     else                                            ResistanceHeave.Vector = TransformVector(vec3(0.0f, ResistanceHeave.Magnitude, 0.0f));
     ResistanceHeave.Position = Archimede.Position;
@@ -1350,8 +1771,9 @@ void Ship::ComputeResistanceWaves(float dt)
 {
     // Froude number
     float Fn = fabs(SurgeVelocity) / sqrt(mGRAVITY * LWL);
-
-	// Wave resistance coefficient (Cw) using a Gaussian distribution
+    //cout << fixed << setprecision(2) << SurgeVelocity << "   " << Fn << endl;
+    
+    // Wave resistance coefficient (Cw) using a Gaussian distribution
 	const float Fr0 = 0.45f;        // Peak centre (estimation, can be adjusted based on the ship type)
 	const float Sigma = 0.085f;     // Peak width (estimation, can be adjusted based on the ship type)
     const float Cw0 = 0.005f;       // Maximal value of Cw
@@ -1546,7 +1968,8 @@ void Ship::ComputeForces(float dt)
 
     // CoupleZ (tangage) (AG.x positive = the bow lowers)
     PitchAcceleration = 0.5f * PitchCouple * force / Izz;
-    PitchAcceleration -= PitchVelocity * damping;
+    //float asymmetryFactor = (PitchAcceleration > 0.0f) ? 1.0f : 0.3f;
+    PitchAcceleration -= PitchVelocity * damping;// *asymmetryFactor;
     PitchVelocity += PitchAcceleration * dt;
     Pitch += PitchVelocity * dt;
 
@@ -1580,8 +2003,8 @@ void Ship::ComputeForces(float dt)
     if (AreaWetted > 0.0f)
     {
         // Slam decreases the speed
-        //if (SurgeAcceleration > 0.0f && PitchAcceleration > 0.0f)
-        //    SurgeAcceleration -= PitchAcceleration;
+        if (SurgeAcceleration > 0.0f && PitchVelocity > 0.0f)
+            SurgeAcceleration -= 0.1f * PitchVelocity;
 
         // Surge: Positive pitch decreases the speed, negative pitch increases the speed
         SurgeAcceleration -= 0.1f * (AreaWetted / AreaWettedMax) * mGRAVITY * sin(Pitch);
@@ -1637,7 +2060,9 @@ void Ship::ComputeForces(float dt)
     Velocity = glm::length(vCOG) / dt;
 
     // HDG, COG, SOG
-    GetHDG();
+    HDG = fmod(450.0f - glm::degrees(Yaw), 360.0f);
+    while (HDG < 0.0f)      HDG += 360.0f;
+    while (HDG > 360.0f)    HDG -= 360.0f;
 
     vec2 dPos = vec2(ship.Position.x, ship.Position.z) - prevPosition;
     if (dt != 0.0f)
@@ -1651,9 +2076,9 @@ void Ship::ComputeForces(float dt)
 	// SOG at the bow and the stern
     mat4 world = mat4(1.0f);
     world = glm::translate(world, ship.Position);
-    world = glm::rotate(world, Yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-    world = glm::rotate(world, Roll, glm::vec3(1.0f, 0.0f, 0.0f));
-    world = glm::rotate(world, Pitch, glm::vec3(0.0f, 0.0f, 1.0f));
+    world = glm::rotate(world, Yaw, vec3(0.0f, 1.0f, 0.0f));
+    world = glm::rotate(world, Roll, vec3(1.0f, 0.0f, 0.0f));
+    world = glm::rotate(world, Pitch, vec3(0.0f, 0.0f, 1.0f));
 
     vec3 PosBow = mBow;
     PosBow = vec3(world * vec4(PosBow, 1.0f));
@@ -1671,7 +2096,7 @@ void Ship::ComputeForces(float dt)
     COGSOG.Position = TransformPosition(ship.PosPower);
     COGSOG.Vector = 1e6f * vec3(vCOG.x, 0.0f, vCOG.y);
 }
-void Ship::ComputeAutopilot(float dt)
+void Ship::UpdateAutopilot(float dt)
 {
     static float integral = 0.0f;
     static float lastError = 0.0f;
@@ -1780,10 +2205,36 @@ void Ship::ComputeAutopilot(float dt)
     // Update last error for next calculation
     lastError = error;
 }
+void Ship::UpdateVaoPressureLines()
+{
+    float coeff = 0.001f * (200000.0f / mMass) * (6000.0 / mF.rows());
 
-// Compute effects
+    vector<vec3> linePoints;
+    for (auto& tri : mvTris)
+    {
+        if (tri.WaterStatus != 0) // at least, 1 pt under water
+        {
+            linePoints.push_back(tri.CoG);
+            linePoints.push_back(tri.CoG - tri.Normal * tri.fPressure * coeff);
+        }
+    }
+    mLinesCount = linePoints.size();
+
+    GLuint VBO;
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, linePoints.size() * sizeof(vec3), linePoints.data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &mVaoLines);
+    glBindVertexArray(mVaoLines);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vec3), (void*)0);
+
+    glEnableVertexAttribArray(0);
+}
 void Ship::UpdateSounds()
 {   
+    bool sound = bSound && g_SoundMgr->bSound;
+
     mSoundPower->setPosition(TransformPosition(ship.PosPower));
     if (ship.HasBowThruster)
     {
@@ -1811,14 +2262,14 @@ void Ship::UpdateSounds()
     }
 
     static bool bPause = false;
-    if (!bVisible || !bSound)
+    if (!bVisible || !sound)
     {
         mSoundPower->pause();
         if (ship.HasBowThruster)
             mSoundBowThruster->pause();
         bPause = true;
     }
-    if (bVisible && bSound && bPause)
+    if (bVisible && sound && bPause)
     {
         mSoundPower->play();
         if (ship.HasBowThruster && BowThrusterRpm != ship.BowThrusterRpmMin)
@@ -1828,24 +2279,153 @@ void Ship::UpdateSounds()
 }
 void Ship::UpdateSmoke(float dt)
 {
+    if (!bVisible)
+        return;
+    
+    if (!bSmoke)
+        return;
+
+    if (ship.nChimney == 0)
+        return;
+
+#ifdef DEBUG_SMOKE
+    // Reset the counter
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO_LIVE_COUNTER);
+    int zero = 0;
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(int), &zero);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    // Bind buffer to binding point 1 before dispatch
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, SSBO_LIVE_COUNTER);
+#endif
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mSSBO_SMOKE);
+
+    vec3 windDirection = 0.25f * vec3(-g_Wind.x, 0.1f * g_WindSpeedKN, -g_Wind.y);
+
+    mShaderSmokeCompute->use();
+    mShaderSmokeCompute->setFloat("dt", dt);
+    mShaderSmokeCompute->setInt("particlesPerFrame", 3);
     vec3 p = TransformPosition(ship.Chimney1);
-    vec3 direction = 0.1f * vec3(-g_Wind.x, 0.1f * g_WindSpeedKN, -g_Wind.y);
-    float windSpeed = KnotsToMS(g_WindSpeedKN);
-    // 1st chimney  
-    mSmokeLeft->Emit(p, direction);
-    mSmokeLeft->Update(dt, direction, windSpeed);
-    mSmokeLeft->UpdateParticleBuffers();
-    // 2nd chimney
+    mShaderSmokeCompute->setVec3("emitPositions[0]", p);
     if (ship.nChimney == 2)
     {
         p = TransformPosition(ship.Chimney2);
-        mSmokeRight->Emit(p, direction);
-        mSmokeRight->Update(dt, direction, windSpeed);
-        mSmokeRight->UpdateParticleBuffers();
+        mShaderSmokeCompute->setVec3("emitPositions[1]", p);
     }
-}
+    mShaderSmokeCompute->setInt("numEmitters", ship.nChimney);
+    mShaderSmokeCompute->setVec3("windDirection", windDirection);
+    mShaderSmokeCompute->setInt("frameCount", mFrameSmokeCount);
+    mShaderSmokeCompute->setFloat("shortLife", 5.0f);
+    mShaderSmokeCompute->setFloat("longLife", 10.0f);
+    // Dispatch compute shader (dividing mSmokeMaxParticles by local_size_x)
+    glDispatchCompute((mSmokeMaxParticles + 255) / 256, 1, 1);
 
-// Wake by buffer
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // guarantee write before read
+
+#ifdef DEBUG_SMOKE
+    // Reading after dispatch
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, SSBO_LIVE_COUNTER);
+    int* counterValue = (int*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof(int), GL_MAP_READ_BIT);
+    if (counterValue) {
+        int liveParticlesCount = *counterValue;
+        cout << "Number of living particles: " << liveParticlesCount << std::endl;
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+#endif
+
+    mFrameSmokeCount++;
+}
+void Ship::UpdateSpray(float dt)
+{
+    if (!bVisible)
+        return;
+    
+    if (!bSpray)
+        return;
+
+    // Emits particules of spray from points distributed on the contour
+    
+    size_t leftCount = mLeft.size();
+    size_t rightCount = mRight.size();
+
+    if (leftCount < 2 || rightCount < 2)
+        return;
+
+    float intensity1, intensity2;
+
+    // Lambda function to emit multiple interpolated particles between two points
+    auto EmitInterpolatedSpray = [&](const sSprayPt& pt1, const sSprayPt& pt2, float intensity1, float intensity2)
+        {
+            for (int j = 0; j <= ship.SprayMultiplier; ++j)
+            {
+                float t = float(j) / float(ship.SprayMultiplier);
+                // Local position interpolation
+                vec3 interpPos = pt1.p * (1.0f - t) + pt2.p * t;
+
+                vec3 emitPosWorld = TransformPosition(interpPos);
+                GetHeightFast(emitPosWorld);
+                
+                // Added random offset to start position only
+                vec3 randomOffset(
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f * mRandomOffsetRange,
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f * mRandomOffsetRange,
+                    ((float)rand() / RAND_MAX - 0.5f) * 2.0f * mRandomOffsetRange
+                );
+                emitPosWorld += randomOffset;
+
+                // Vertical interpolation factor
+                float intensity = intensity1 * (1.0f - t) + intensity2 * t;
+
+                // Normal interpolation and velocity calculation
+                vec3 interpNormal = pt1.n * (1.0f - t) + pt2.n * t;
+
+                vec3 velocity = TransformVector(interpNormal) * intensity;
+                velocity.y += intensity + 2.0f * ship.SprayVerticalPerf * PitchVelocity;
+                velocity.x += 2.0f * vCOG.x;
+                velocity.z += 2.0f * vCOG.y;
+                velocity *= Velocity * 0.5f;
+                if (intensity > 0.0f)
+                    mSpray->Emit(emitPosWorld, velocity);
+            }
+        };
+
+    // Emission on the left with interpolation between points
+    for (size_t i = 0; i < leftCount - 1; ++i)
+    {
+        intensity1 = 1.0f - float(i) / float(leftCount - 1);
+        intensity2 = 1.0f - float(i + 1) / float(leftCount - 1);
+        
+        if (ship.SprayType == 1)
+        {
+            // Using a sine in [0, pi/2] to vary from 1.0 to 0
+            intensity1 = sinf(1.57079632679f * intensity1);
+            intensity2 = sinf(1.57079632679f * intensity2);
+        }
+
+        EmitInterpolatedSpray(mLeft[i], mLeft[i + 1], intensity1, intensity2);
+    }
+    mSpray->Update(dt);
+
+    // Emission on the right with interpolation between points
+    for (size_t i = 0; i < rightCount - 1; ++i)
+    {
+        intensity1 = 1.0f - float(i) / float(rightCount - 1);
+        intensity2 = 1.0f - float(i + 1) / float(rightCount - 1);
+        
+        if (ship.SprayType == 1)
+        {
+            // Using a sine in [0, pi/2] to vary from 1.0 to 0
+            intensity1 = sinf(1.57079632679f * intensity1);
+            intensity2 = sinf(1.57079632679f * intensity2);
+        }
+        
+        EmitInterpolatedSpray(mRight[i], mRight[i + 1], intensity1, intensity2);
+    }
+    mSpray->Update(dt);
+
+    //cout << mSpray->GetNbActiveParticles() << endl;
+}
 void Ship::UpdateWakeBuffer()
 {
     // Calcul du déplacement en mètres
@@ -1899,26 +2479,6 @@ void Ship::UpdateWakeBuffer()
 }
 
 // Wake by vao
-void Ship::CreateWakeVao()
-{
-    glGenVertexArrays(1, &mVaoWake);
-
-    glGenBuffers(1, &mVboWake);
-    glBindVertexArray(mVaoWake);
-    glBindBuffer(GL_ARRAY_BUFFER, mVboWake);
-    glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
-    // position (3 floats)
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(sFoamVertex), (void*)offsetof(sFoamVertex, pos));
-    // uv (2 floats)
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(sFoamVertex), (void*)offsetof(sFoamVertex, uv));
-    // alpha (1 float)
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(sFoamVertex), (void*)offsetof(sFoamVertex, alpha));
-
-    glBindVertexArray(0);
-}
 float calcAlpha(float pointTime, float now)
 {
     const float start = 4.0f;
@@ -2025,13 +2585,14 @@ void Ship::UpdateWakeVao()
     float uv_v = 0.0f, dv = 1.0f / n;
 
     float now = glfwGetTime();
+    
+    /*
+    // 1 trail
     for (size_t i = 0; i + 1 < n; ++i)
     {
         float v0 = uv_v, v1 = uv_v + dv;
-
         float alpha0 = calcAlpha(vWakePoints[i].time, now);
         float alpha1 = calcAlpha(vWakePoints[i + 1].time, now);
-      
         // Triangle 1
         vWakeVertices.push_back({ sideLeft[i],  {0, v0}, alpha0 });
         vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
@@ -2040,10 +2601,43 @@ void Ship::UpdateWakeVao()
         vWakeVertices.push_back({ sideLeft[i + 1],  {0, v1}, alpha1 });
         vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
         vWakeVertices.push_back({ sideRight[i + 1], {1, v1}, alpha1 });
+        uv_v += dv;
+    }
+    */
+    // 3 trails (left and right with foam and center without foam)
+    for (size_t i = 0; i + 1 < n; ++i)
+    {
+        float v0 = uv_v, v1 = uv_v + dv; 
+        
+        float alpha0 = calcAlpha(vWakePoints[i].time, now);
+        float alpha1 = calcAlpha(vWakePoints[i + 1].time, now);
+
+        vec3 center0 = vWakePoints[i].pos;       // centre actuel
+        vec3 center1 = vWakePoints[i + 1].pos;   // centre suivant
+
+        // Triangle gauche-centre
+        vWakeVertices.push_back({ sideLeft[i],  {0, v0}, alpha0 });
+        vWakeVertices.push_back({ center0,      {0.5, v0}, 0.0f }); // centre sans mousse, alpha 0
+        vWakeVertices.push_back({ sideLeft[i + 1],  {0, v1}, alpha1 });
+
+        // Triangle centre-gauche (suite)
+        vWakeVertices.push_back({ sideLeft[i + 1],  {0, v1}, alpha1 });
+        vWakeVertices.push_back({ center0,      {0.5, v0}, 0.0f });
+        vWakeVertices.push_back({ center1,      {0.5, v1}, 0.0f });
+
+        // Triangle centre-droite
+        vWakeVertices.push_back({ center0,      {0.5, v0}, 0.0f });
+        vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
+        vWakeVertices.push_back({ center1,      {0.5, v1}, 0.0f });
+
+        // Triangle droite-centre (suite)
+        vWakeVertices.push_back({ center1,      {0.5, v1}, 0.0f });
+        vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
+        vWakeVertices.push_back({ sideRight[i + 1], {1, v1}, alpha1 });
 
         uv_v += dv;
     }
-
+    
     // Remove the temporary stitch after use
     vWakePoints.pop_back();
 
@@ -2065,9 +2659,7 @@ void Ship::UpdateTextureWakeVao()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glBindVertexArray(mVaoWake);
-
-    mShaderWakeVaoToTex->use();
+    mShaderWakeVaoToTex->use();     // Ship/wake_vao.vert, Ship/wake_vao.frag
     mShaderWakeVaoToTex->setFloat("scaleX", 2.0f / TexWakeVaoSize);
     mShaderWakeVaoToTex->setFloat("scaleZ", 2.0f / TexWakeVaoSize);
     mShaderWakeVaoToTex->setFloat("offsetX", 0.0f);
@@ -2093,7 +2685,7 @@ void Ship::UpdateTextureWakeVao()
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    mShaderGaussH->use();
+    mShaderGaussH->use();       // Ship/wake_gauss.vert, Ship/wake_gauss_h.frag
     mShaderGaussH->setSampler2D("tex", TexBlit, 0);
     mShaderGaussH->setFloat("texelWidth", 1.0f / (float)TexWakeVaoSize);
     mScreenQuadWakeBuffer->Render();
@@ -2105,7 +2697,7 @@ void Ship::UpdateTextureWakeVao()
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    mShaderGaussV->use();
+    mShaderGaussV->use();       // Ship/wake_gauss.vert, Ship/wake_gauss_v.frag
     mShaderGaussV->setSampler2D("tex", mTexGauss1, 0);
     mShaderGaussV->setFloat("texelHeight", 1.0f / (float)TexWakeVaoSize);
     mScreenQuadWakeBuffer->Render();
@@ -2122,7 +2714,7 @@ void Ship::RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 
     float longueur = scale * glm::length(V);
     mat4 model(1.0f);
     model = glm::translate(model, vec3(longueur, 0, 0));
-    model = glm::scale(model, vec3(longueur, 0.025f, 0.025f));
+    model = glm::scale(model, vec3(longueur, 0.05f, 0.05f));
     quat q = RotationBetweenVectors(vec3(1.0f, 0.0f, 0.0f), V);
     model = glm::mat4_cast(q) * model;
     model = glm::translate(mat4(1.0f), P) * model;
@@ -2150,7 +2742,7 @@ void Ship::RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 colo
     float longueur = scale * glm::length(f.Vector);
     mat4 model(1.0f);
     model = glm::translate(model, vec3(longueur, 0, 0));
-    model = glm::scale(model, vec3(longueur, 0.025f, 0.025f));
+    model = glm::scale(model, vec3(longueur, 0.05f, 0.05f));
     quat q = RotationBetweenVectors(vec3(1.0f, 0.0f, 0.0f), vec);
     model = mat4_cast(q) * model;
     model = glm::translate(mat4(1.0f), pos) * model;
@@ -2228,7 +2820,7 @@ void Ship::RenderNavLight(Camera& camera, int i, float distance)
     mShaderNavLight->setFloat("intensity", 100000.0f);
     mLight->Bind();
 }
-void Ship::RenderPropellers(Camera& camera,Sky* sky, bool bReflexion)
+void Ship::RenderPropellers(Camera& camera,Sky* sky)
 {
     // Light from sun
     mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
@@ -2249,8 +2841,7 @@ void Ship::RenderPropellers(Camera& camera,Sky* sky, bool bReflexion)
     matPropeller1 = glm::rotate(matPropeller1, rotation, vec3(1.0f, 0.0f, 0.0f));
     mShaderShip->setMat4("model", World * matPropeller1);
     
-    if (!bReflexion)    mShaderShip->setMat4("view", camera.GetView());
-    else                mShaderShip->setMat4("view", camera.GetViewReflexion());
+    mShaderShip->setMat4("view", camera.GetView());
     mShaderShip->setMat4("projection", camera.GetProjection());
     mPropeller->Render(*mShaderShip);
  
@@ -2273,7 +2864,7 @@ void Ship::RenderPropellers(Camera& camera,Sky* sky, bool bReflexion)
         mPropeller->Render(*mShaderShip);
     }
 }
-void Ship::RenderRudders(Camera& camera, Sky* sky, bool bReflexion)
+void Ship::RenderRudders(Camera& camera, Sky* sky)
 {
     // Light from sun
     mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
@@ -2290,8 +2881,7 @@ void Ship::RenderRudders(Camera& camera, Sky* sky, bool bReflexion)
     matRudder1 = glm::rotate(matRudder1, rotation, vec3(0.0f, 1.0f, 0.0f));
     mShaderShip->setMat4("model", World * matRudder1);
 
-    if (!bReflexion)    mShaderShip->setMat4("view", camera.GetView());
-    else                mShaderShip->setMat4("view", camera.GetViewReflexion());
+    mShaderShip->setMat4("view", camera.GetView());
     mShaderShip->setMat4("projection", camera.GetProjection());
     mRudder->Render(*mShaderShip);
 
@@ -2362,34 +2952,124 @@ void Ship::RenderRadars(Camera& camera, Sky* sky, bool bReflexion)
         mRadar2->Render(*mShaderShip);
     }
 }
-void Ship::RenderSmoke(Camera& camera)
+void Ship::RenderSmoke(Camera& camera, Sky* sky)
+{
+    if (!bSmoke)
+        return;
+    
+    if (ship.nChimney == 0)
+        return;
+
+    float density = InterpolateAValue(0.0f, mPowerW, 0.01f, 0.15f, fabs(PowerApplied));
+
+    glDepthMask(GL_FALSE);
+
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    mShaderSmokeRender->use();
+
+    mShaderSmokeRender->setMat4("view", camera.GetView());
+    mShaderSmokeRender->setMat4("projection", camera.GetProjection());
+    mShaderSmokeRender->setFloat("density", density);
+    mShaderSmokeRender->setFloat("lifeSpan", 5.0f);
+    mShaderSmokeRender->setFloat("exposure", sky->Exposure);
+
+    glBindVertexArray(mVaoSmoke);
+    glDrawArraysInstanced(GL_POINTS, 0, 1, mSmokeMaxParticles);
+    glDepthMask(GL_TRUE);
+
+    glBindVertexArray(0);
+}
+void Ship::RenderSpray(Camera& camera, Sky* sky)
 {
     if (!bVisible)
         return;
 
-    if (!bSmoke)
-        return;
-
-    if (ship.nChimney == 0)
+    if (!bSpray)
         return;
 
     glDepthMask(GL_FALSE);
-    float density = InterpolateAValue(0.0f, mPowerW, 0.01f, 0.15f, fabs(PowerApplied));
-    if (mSmokeLeft)
-        mSmokeLeft->Render(camera, density);
-    if (ship.nChimney > 1 && mSmokeRight)
-        mSmokeRight->Render(camera, density);
+
+    // ... = 0, [2 = 0, 6 = 1], ... = 1
+    const float min = 2.0f;     // density starts to increase
+    const float range = 4.0f;   // density stops to increase
+    float density = std::clamp((Velocity - min) / range, 0.0f, 1.0f);
+    if (mSpray)
+        mSpray->Render(camera, density, sky->Exposure);
+    
     glDepthMask(GL_TRUE);
 }
+void Ship::RenderReflexion(Camera& camera, Sky* sky)
+{
+    if (!bVisible)
+        return;
 
-void Ship::Render(Camera& camera, Sky* sky, bool bReflexion)
+    if (bWireframe)
+        return;
+
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+
+    UpdateWorldMatrix();
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glDisable(GL_CULL_FACE); // Necessary because the windows of the bridge are transparent
+
+    if (bModel)
+    {
+        switch (Rendering)
+        {
+        case eRendering::BASIC_LIGHT:
+        {
+            // Light from camera
+            mShaderCamera->use();   // Shaders/camera.vert, Shaders/camera.frag
+            mShaderCamera->setVec3("light.position", camera.GetPosition() - ship.Position);
+            mShaderCamera->setVec3("light.diffuse", vec3(1.0f));
+            mShaderCamera->setMat4("model", World);
+            mShaderCamera->setMat4("view", camera.GetViewReflexion());
+            mShaderCamera->setMat4("projection", camera.GetProjection());
+            mModelFull->Render(*mShaderCamera);
+        }
+        break;
+        case eRendering::SUN:
+        {
+            // Light from sun
+            mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+            mShaderShip->setVec3("light.position", sky->SunPosition);
+            mShaderShip->setVec3("light.ambient", sky->SunAmbient);
+            mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
+            mShaderShip->setVec3("light.specular", sky->SunSpecular);
+            mShaderShip->setVec3("viewPos", camera.GetPosition());
+            mShaderShip->setFloat("exposure", sky->Exposure);
+            if (camera.GetMode() == eCameraMode::ORBITAL || camera.GetMode() == eCameraMode::FPS)
+                mShaderShip->setFloat("envmapFactor", ship.EnvMapFactor);
+            else
+                mShaderShip->setFloat("envmapFactor", 0.0f);
+            mShaderShip->setInt("envmap", 1);
+            // Matricies
+            mShaderShip->setMat4("model", World);
+            mShaderShip->setMat4("view", camera.GetViewReflexion());
+            mShaderShip->setMat4("projection", camera.GetProjection());
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
+
+            mModelFull->Render(*mShaderShip);
+        }
+        break;
+        }
+
+        RenderRadars(camera, sky, true);
+    }
+}
+
+void Ship::Render(Camera& camera, Sky* sky)
 {
     if (!bVisible)
         return;
     
     UpdateWorldMatrix();
-    g_SoundMgr->setListenerPosition(camera.GetPosition());
-    g_SoundMgr->setListenerOrientation(camera.GetAt(), camera.GetUp());
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -2399,70 +3079,67 @@ void Ship::Render(Camera& camera, Sky* sky, bool bReflexion)
     if (bWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
 #pragma region Ship
-    switch (Rendering)
+    if (bModel)
     {
-    case eRendering:: TRIANGLES:
-    {
-        mShaderHullColored->use();     // Shaders/hull_colored.vert, Shaders/hull_colored.frag
-        mShaderHullColored->setMat4("model", World);
-        mShaderHullColored->setMat4("view", camera.GetView());
-        mShaderHullColored->setMat4("projection", camera.GetProjection());
-        
-        glBindVertexArray(mVao);
-        glDrawElements(GL_TRIANGLES, mIndicesFull, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-    }
-    break;
-    case eRendering::BASIC_LIGHT:
-    {
-        // Light from camera
-        mShaderCamera->use();   // Shaders/camera.vert, Shaders/camera.frag
-        mShaderCamera->setVec3("light.position", camera.GetPosition() - ship.Position);    
-        mShaderCamera->setVec3("light.diffuse", vec3(1.0f));
-        mShaderCamera->setMat4("model", World);
-        if(!bReflexion)
-            mShaderCamera->setMat4("view", camera.GetView());
-        else
-            mShaderCamera->setMat4("view", camera.GetViewReflexion());
-        mShaderCamera->setMat4("projection", camera.GetProjection());
-        mModelFull->Render(*mShaderCamera);
-    }
-    break;
-    case eRendering::SUN:
-    {
-        // Light from sun
-        mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
-        mShaderShip->setVec3("light.position", sky->SunPosition);
-        mShaderShip->setVec3("light.ambient", sky->SunAmbient);
-        mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
-        mShaderShip->setVec3("light.specular", sky->SunSpecular);
-        mShaderShip->setVec3("viewPos", camera.GetPosition());
-		mShaderShip->setFloat("exposure", sky->Exposure);
-        if (camera.GetMode() == eCameraMode::ORBITAL || camera.GetMode() == eCameraMode::FPS)
-            mShaderShip->setFloat("envmapFactor", ship.EnvMapfactor);
-        else
-            mShaderShip->setFloat("envmapFactor", 0.0f);
-        mShaderShip->setInt("envmap", 1);
-        // Matricies
-        mShaderShip->setMat4("model", World);
-        if (!bReflexion)
-            mShaderShip->setMat4("view", camera.GetView());
-        else
-            mShaderShip->setMat4("view", camera.GetViewReflexion());
-        mShaderShip->setMat4("projection", camera.GetProjection());
-        
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
+        switch (Rendering)
+        {
+        case eRendering::TRIANGLES:
+        {
+            mShaderHullColored->use();     // Shaders/hull_colored.vert, Shaders/hull_colored.frag
+            mShaderHullColored->setMat4("model", World);
+            mShaderHullColored->setMat4("view", camera.GetView());
+            mShaderHullColored->setMat4("projection", camera.GetProjection());
 
-        mModelFull->Render(*mShaderShip);
-    }
-    break;
+            glBindVertexArray(mVaoHull);
+            glDrawElements(GL_TRIANGLES, mIndicesFull, GL_UNSIGNED_INT, 0);
+            glBindVertexArray(0);
+        }
+        break;
+        case eRendering::BASIC_LIGHT:
+        {
+            // Light from camera
+            mShaderCamera->use();   // Shaders/camera.vert, Shaders/camera.frag
+            mShaderCamera->setVec3("light.position", camera.GetPosition() - ship.Position);
+            mShaderCamera->setVec3("light.diffuse", vec3(1.0f));
+            mShaderCamera->setMat4("model", World);
+            mShaderCamera->setMat4("view", camera.GetView());
+            mShaderCamera->setMat4("projection", camera.GetProjection());
+            mModelFull->Render(*mShaderCamera);
+        }
+        break;
+        case eRendering::SUN:
+        {
+            // Light from sun
+            mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+            mShaderShip->setVec3("light.position", sky->SunPosition);
+            mShaderShip->setVec3("light.ambient", sky->SunAmbient);
+            mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
+            mShaderShip->setVec3("light.specular", sky->SunSpecular);
+            mShaderShip->setVec3("viewPos", camera.GetPosition());
+            mShaderShip->setFloat("exposure", sky->Exposure);
+            if (camera.GetMode() == eCameraMode::ORBITAL || camera.GetMode() == eCameraMode::FPS)
+                mShaderShip->setFloat("envmapFactor", ship.EnvMapFactor);
+            else
+                mShaderShip->setFloat("envmapFactor", 0.0f);
+            mShaderShip->setInt("envmap", 1);
+            // Matricies
+            mShaderShip->setMat4("model", World);
+            mShaderShip->setMat4("view", camera.GetView());
+            mShaderShip->setMat4("projection", camera.GetProjection());
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
+
+            mModelFull->Render(*mShaderShip);
+        }
+        break;
+        }
+
+        RenderPropellers(camera, sky);
+        RenderRudders(camera, sky);
+        RenderRadars(camera, sky, false);
     }
 #pragma endregion
-   
-    RenderPropellers(camera, sky, bReflexion);
-    RenderRudders(camera, sky, bReflexion);
-    RenderRadars(camera, sky, bReflexion);
 
     if (bWireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -2509,7 +3186,7 @@ void Ship::Render(Camera& camera, Sky* sky, bool bReflexion)
         switch (Rendering)
         {
         case eRendering::TRIANGLES:
-            glBindVertexArray(mVao);
+            glBindVertexArray(mVaoHull);
             glDrawElements(GL_TRIANGLES, mIndicesFull, GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
             break;
@@ -2575,26 +3252,15 @@ void Ship::Render(Camera& camera, Sky* sky, bool bReflexion)
 #pragma region Axis
     if (bAxis)
     {
-        mat4 modelX = glm::scale(World, vec3(2.0f + mLength / 2.0f, 0.025f, 0.025f));
+        mat4 modelX = glm::scale(World, vec3(5.0f + mLength / 2.0f, 0.05f, 0.05f));
         mAxis->RenderDistorted(camera, modelX, vec3(1.0f, 0.0f, 0.0f));
 
-        mat4 modelY = glm::scale(World, vec3(0.025f, 2.0f + mHeight / 2.0f, 0.025f));
+        mat4 modelY = glm::scale(World, vec3(0.05f, 10.0f + mHeight / 2.0f, 0.05f));
         mAxis->RenderDistorted(camera, modelY, vec3(0.0f, 1.0f, 0.0f));
 
-        mat4 modelZ = glm::scale(World, vec3(0.025f, 0.025f, 2.0f + mWidth / 2.0f));
+        mat4 modelZ = glm::scale(World, vec3(0.05f, 0.05f, 5.0f + mWidth / 2.0f));
         mAxis->RenderDistorted(camera, modelZ, vec3(0.0f, 0.0f, 1.0f));
     }
 #pragma endregion
 
-}
-void Ship::RenderShadow(Shader* shader, Camera& camera, mat4& lightSpaceMatrix)
-{
-    UpdateWorldMatrix();
-    shader->use();
-    // Matricies
-    shader->setMat4("model", World);
-    shader->setMat4("view", camera.GetView());
-    shader->setMat4("projection", camera.GetProjection());
-    shader->setMat4("lightSpaceMatrix", lightSpaceMatrix);
-    mModelFull->Render(*shader);
 }

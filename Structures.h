@@ -46,11 +46,18 @@ struct sShip
 	vec3		View3			= vec3(0.0f);		// View 3 somewhere
 
 	float		Length			= 10.0f;			// Final length after rescaling
+	float		SpeedMaxKn		= 10.0f;			// Final speed max after sea trials
 	float		Mass_t			= 1.0f;				// Tons
 	vec3		PosGravity		= vec3(0.0f);		// Offset of the center of gravity (relative to Position)
-
-	float		EnvMapfactor	= 0.0f;				// Factor of environment reflexion (between 0.0 and 1.0)
-
+	float		HeavePerf		= 1.0f;				// Performance of heave (damping)
+	float		EnvMapFactor	= 0.0f;				// Factor of environment reflexion (between 0.0 and 1.0)
+	
+	// Spray
+	float		SprayVerticalPerf = 10.0f;			// Vertical spray performance
+	int			SprayMultiplier = 1;				// Number of points between points of contour
+	float		SprayLength		= 0.1f;				// % of length of the ship taken on the contour
+	int			SprayType		= 0;				// 0 = sharp (like a frigate), 1 = rounded (like a cargo)
+	
 	// Rudder
 	vec3		PosRudder		= vec3(0.0f);		// Offset of the center of the rudder (relative to Position)
 	float		RudderIncrement = 1.0f;				// Degrees
@@ -71,7 +78,6 @@ struct sShip
 	vec3		PosPower			= vec3(0.0f);	// Offset of the center of the propeller where the power is applied (relative to Position)
 	float		PowerPerf			= 0.4f;			// Percentage of the efficency of the system Engine - Propeller
 	float		PowerkW				= 100000.0f;	// kiloWatts
-	float		MaxStaticThrust;					// Initial thrust
 	int			PowerStepMax		= 10;			// Number of steps on the throttle lever
 	float		PowerRpmMin			= 0.0f;			// Minimum RPM of the propeller
 	float		PowerRpmMax			= 200.0f;		// Maximum RPM of the propeller
@@ -118,6 +124,8 @@ struct sShip
 	float		LowSpeedBoost	= 2.0f;				// Low speed amplification factor
 	float		SeaSateFactor	= 1.0f;				// Increases responsiveness in difficult conditions (Pitch and Roll)
 
+	// Waves
+	float		CenterFore		= 0.0f;
 };
 struct sTerrain
 {

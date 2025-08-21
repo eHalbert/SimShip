@@ -5,9 +5,9 @@ extern "C"
 #include "nova/nova.h"
 }
 #ifdef _DEBUG
-#pragma comment(lib, "nova/Debug/x64/nova.lib")
+#pragma comment(lib, "nova/Debug/nova.lib")
 #else
-#pragma comment(lib, "nova/Release/x64/nova.lib")
+#pragma comment(lib, "nova/Release/nova.lib")
 #endif
 
 extern vec2 g_InitialPosition;
@@ -32,14 +32,14 @@ static const struct { float k, r, g, b; } blackbodyLUT[] = {
     {10000,0.568f, 0.816f, 1.000f}
 };
 
-Sky::Sky(int width, int height)
+Sky::Sky(vec2 pos, int width, int height)
 {
+    LongitudeObserver = pos.x;
+    LatitudeObserver = pos.y;
     mWidth = width;
     mHeight = height;
 
-    // Sun (at 20000 m from centre)
-    SetSunAngles(g_InitialPosition);                // Computation of azimut and elevation of the sun from the position
-    SetPositionFromDistance();               // Computation of vec3 from distance, theta and phi
+    SetNow();
 
     // Textures
 
@@ -155,6 +155,11 @@ Sky::~Sky()
     glDeleteTextures(1, &mTextureSky);
 }
 
+void Sky::SetObserver(vec2 pos)
+{
+    LongitudeObserver = pos.x;
+    LatitudeObserver = pos.y;
+}
 void Sky::SetPositionFromDistance()
 {
     float radPhi = glm::radians(SunAzimut + 270.0f);
@@ -167,90 +172,6 @@ void Sky::SetPositionFromDistance()
     radTheta = glm::radians(SunElevation);
     SunDirectionEB = vec3(sin(radTheta) * cos(radPhi), sin(radTheta) * sin(radPhi), cos(radTheta));
 };
-void Sky::SetSunAngles(vec2 pos)
-{
-    // Get the current time in UTC
-    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-
-    // Convert to tm structure in UTC
-    std::tm tm_utc;
-    gmtime_s(&tm_utc, &now_c);
-
-    // Create the ln_date structure with UTC values
-    struct ln_date date;
-    date.years = tm_utc.tm_year + 1900;
-    date.months = tm_utc.tm_mon + 1;
-    date.days = tm_utc.tm_mday;
-    date.hours = tm_utc.tm_hour;
-    date.minutes = tm_utc.tm_min;
-    date.seconds = tm_utc.tm_sec;
-
-    // Calculate the Julian day
-    double JD = ln_get_julian_day(&date);
-
-    struct ln_lnlat_posn observer;
-    observer.lng = pos.x; // Longitude
-    observer.lat = pos.y; // Latitude
-
-    struct ln_equ_posn sun;
-    ln_get_solar_equ_coords(JD, &sun);
-
-    struct ln_hrz_posn position;
-    ln_get_hrz_from_equ(&sun, &observer, JD, &position);
-
-    SunElevation = 90.0f - position.alt;
-    SunAzimut = position.az + 180.0f;
-
-    while (SunElevation < 0.0f)      SunElevation += 360.0f;
-    while (SunElevation > 360.0f)    SunElevation -= 360.0f;
-    while (SunAzimut < 0.0f)        SunAzimut += 360.0f;
-    while (SunAzimut > 360.0f)      SunAzimut -= 360.0f;
-    ExpositionFromAngle();
-    ColorOfTheSun();
-}
-void Sky::SetSunAngles(vec2 pos, float hour)
-{
-    // Get the current time in UTC
-    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-
-    // Convert to tm structure in UTC
-    std::tm tm_utc;
-    gmtime_s(&tm_utc, &now_c);
-
-    // Create the ln_date structure with UTC values
-    struct ln_date date;
-    date.years = tm_utc.tm_year + 1900;
-    date.months = tm_utc.tm_mon + 1;
-    date.days = tm_utc.tm_mday;
-    date.hours = int(hour);
-    date.minutes = (hour - int(hour)) * 60;
-    date.seconds = 0.0;
-
-    // Calculate the Julian day
-    double JD = ln_get_julian_day(&date);
-
-    struct ln_lnlat_posn observer;
-    observer.lng = pos.x; // Longitude
-    observer.lat = pos.y; // Latitude
-
-    struct ln_equ_posn sun;
-    ln_get_solar_equ_coords(JD, &sun);
-
-    struct ln_hrz_posn position;
-    ln_get_hrz_from_equ(&sun, &observer, JD, &position);
-
-    SunElevation = 90.0f - position.alt;
-    SunAzimut = position.az + 180.0f;
-
-    while (SunElevation < 0.0f)      SunElevation += 360.0f;
-    while (SunElevation > 360.0f)    SunElevation -= 360.0f;
-    while (SunAzimut < 0.0f)        SunAzimut += 360.0f;
-    while (SunAzimut > 360.0f)      SunAzimut -= 360.0f;
-    ExpositionFromAngle();
-    ColorOfTheSun();
-}
 void Sky::ExpositionFromAngle()
 {
     const float minExposure = 0.02f;
@@ -312,7 +233,8 @@ void Sky::ColorOfTheSun()
     SunDiffuse = temp;
     SunSpecular = temp;
 }
-float Sky::GetHourFromNow()
+
+void Sky::SetNow()
 {
     // Get the current time in UTC
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
@@ -329,9 +251,131 @@ float Sky::GetHourFromNow()
     date.days = tm_utc.tm_mday;
     date.hours = tm_utc.tm_hour;
     date.minutes = tm_utc.tm_min;
-    date.seconds = tm_utc.tm_sec;
+    date.seconds = 0.0;
 
-    return date.hours + date.minutes / 60.0f;
+    SunHour = date.hours;
+    SunMinute = date.minutes;
+    tmTimeStored = tm_utc;
+
+    // Calculate the Julian day
+    double JD = ln_get_julian_day(&date);
+
+    struct ln_lnlat_posn observer;
+    observer.lng = LongitudeObserver;
+    observer.lat = LatitudeObserver;
+
+    struct ln_equ_posn sun;
+    ln_get_solar_equ_coords(JD, &sun);
+
+    struct ln_hrz_posn position;
+    ln_get_hrz_from_equ(&sun, &observer, JD, &position);
+
+    SunElevation = 90.0f - position.alt;
+    SunAzimut = position.az + 180.0f;
+
+    while (SunElevation < 0.0f)      SunElevation += 360.0f;
+    while (SunElevation > 360.0f)    SunElevation -= 360.0f;
+    while (SunAzimut < 0.0f)        SunAzimut += 360.0f;
+    while (SunAzimut > 360.0f)      SunAzimut -= 360.0f;
+    ExpositionFromAngle();
+    ColorOfTheSun();
+    SetPositionFromDistance();
+}
+sHM Sky::GetNow()
+{
+    // Get the current time in UTC
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+
+    // Convert to tm structure in UTC
+    std::tm tm_utc;
+    gmtime_s(&tm_utc, &now_c);
+
+    sHM hm{};
+    hm.hour = SunHour = tm_utc.tm_hour;
+    hm.minute = SunMinute = tm_utc.tm_min;
+
+    return hm;
+}
+void Sky::SetTime(int hour, int minute)
+{
+    // Get the current time in UTC
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+
+    // Convert to tm structure in UTC
+    std::tm tm_utc;
+    gmtime_s(&tm_utc, &now_c);
+
+    // Create the ln_date structure with UTC values
+    struct ln_date date;
+    date.years = tm_utc.tm_year + 1900;
+    date.months = tm_utc.tm_mon + 1;
+    date.days = tm_utc.tm_mday;
+    date.hours = SunHour;
+    date.minutes = SunMinute;
+    date.seconds = 0.0;
+
+    SunHour = hour;
+    SunMinute = minute;
+    tmTimeStored = tm_utc;
+
+    // Calculate the Julian day
+    double JD = ln_get_julian_day(&date);
+
+    struct ln_lnlat_posn observer;
+    observer.lng = LongitudeObserver;
+    observer.lat = LatitudeObserver;
+
+    struct ln_equ_posn sun;
+    ln_get_solar_equ_coords(JD, &sun);
+
+    struct ln_hrz_posn position;
+    ln_get_hrz_from_equ(&sun, &observer, JD, &position);
+
+    SunElevation = 90.0f - position.alt;
+    SunAzimut = position.az + 180.0f;
+
+    while (SunElevation < 0.0f)      SunElevation += 360.0f;
+    while (SunElevation > 360.0f)    SunElevation -= 360.0f;
+    while (SunAzimut < 0.0f)        SunAzimut += 360.0f;
+    while (SunAzimut > 360.0f)      SunAzimut -= 360.0f;
+    ExpositionFromAngle();
+    ColorOfTheSun();
+    SetPositionFromDistance();
+}
+sHM Sky::GetTime()
+{
+    // Get the current time in UTC
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+
+    // Convert to tm structure in UTC
+    std::tm tm_utc;
+    gmtime_s(&tm_utc, &now_c);
+
+    int hour = tm_utc.tm_hour - tmTimeStored.tm_hour;
+    int minute = tm_utc.tm_min - tmTimeStored.tm_min;
+    if (SunHour + hour > 23)
+        hour = 0;
+    if (SunMinute + minute > 59)
+    {
+        if (SunHour + hour < 23)
+        {
+            SunMinute = 0;
+            SunHour++;
+        }
+        else
+        {
+            SunMinute = 59;
+            SunHour = 23;
+        }
+    }
+    sHM hm{};
+    hm.hour = SunHour + hour;
+    hm.minute = SunMinute + minute;
+
+    return hm;
 }
 
 void Sky::Render(Camera& camera)

@@ -82,6 +82,9 @@ struct sFoamVertex
 	vec2		uv;			// Coordonnée dans la texture
 	float		alpha;
 };
+struct sSprayPt { vec3 p; vec3 n; };
+
+#define TRACE
 
 class Ship
 {
@@ -93,18 +96,22 @@ public:
 	void	SetOcean(Ocean* ocean);
 	void	SetMass() { mMass = ship.Mass_t * 1000.0f; }
 	float	GetLength() { return mLength; }
+	float	GetWidth() { return mWidth; }
+
 	void	ResetVelocities();
 	vec3	TransformPosition(vec3 v);
 	vec3	TransformVector(vec3 v);
 	void	SetYawFromHDG(float hdg);
 	void	Update(float time);
 
-	void	RenderSmoke(Camera& camera);
+	void	RenderSmoke(Camera& camera, Sky* sky);
+	void	RenderSpray(Camera& camera, Sky* sky);
 	void	RenderWakeVao(Camera& camera);
 	void	RenderContour(Camera& camera);
+	void	RenderReflexion(Camera& camera, Sky* sky);
+	void	Render(Camera& camera, Sky* sky);
 
-	void	Render(Camera& camera, Sky* sky, bool bReflexion);
-	void	RenderShadow(Shader* shader, Camera& camera, mat4& lightSpaceMatrix);
+	GLuint	GetTraceID();
 
 	sShip				ship;
 		
@@ -135,7 +142,7 @@ public:
 	float				HeaveVelocity		= 0.0f;
 	float				SurgeAcceleration	= 0.0f;
 	float				SurgeVelocity		= 0.0f;
-	float				YawAcceleration		 = 0.0f;
+	float				YawAcceleration		= 0.0f;
 	float				YawVelocity			= 0.0f;
 	float				WindAcceleration	= 0.0f;
 	float				WindVelocity		= 0.0f;
@@ -157,13 +164,16 @@ public:
 	int					BowThrusterCurrentStep = 0;
 	float				BowThrusterApplied	= 0.0f;		// kW
 	float				BowThrusterRpm		= 0.0f;
-		// Autopilot
+	
+	// Autopilot
 	bool				bAutopilot			= false;
 	int					HDGInstruction		= 0;
 	bool				bDynamicAdjustment	= false;
 
 	// Switches
 	bool				bVisible			= true;
+	bool				bMotion				= true;
+	bool				bModel				= true;
 	bool				bWireframe			= false;
 	bool				bOutline			= false;
 	bool				bAxis				= false;
@@ -174,16 +184,107 @@ public:
 	bool				bSound				= true;
 	bool				bLights				= false;
 	bool				bSmoke				= true;
+	bool				bSpray				= true;
 	bool				bRadar				= true;
+	bool				bWaves				= true;
 	bool				bWakeVao			= false;
 	bool				bContour			= false;
 
 	unique_ptr<BBox>	BBoxShape;
-	unique_ptr<Smoke>	mSmokeLeft;
-	unique_ptr<Smoke>	mSmokeRight;
+
+
+private:
+	void	InitBoundingBox();
+	void	InitDimensions();
+	void	InitTriangles();
+	void	InitCentroid();
+	void	InitSurfaces();
+	void	InitVolume();
+	void	InitInertia();
+	void	InitWaterVertices();
+	void	InitVaoHull();
+	void	InitContours();
+	void	InitShaders();
+	void	InitTextures();
+	void	InitVaoWake();
+	void	InitModels();
+	void	InitSounds(Camera& camera);
+	void	InitSpray(vector<vec3>& contour);
+	void	InitSmoke();
+
+
+	// Contour
+	vector<vec3> ComputeContour();
+	vector<vec3> ArrangeContour(const vector<vec3>& contourUnordered); 
+	vector<vec3> OffsetContour(const vector<vec3>& contour, float offset);
+	void	CreateTexWake(const vector<vec3>& contour);
+	void	CreateContourVAO1(vector<vec3>& contour);
+	void	CreateContourVAO2(vector<vec3>& contour);
+
+	vec3	GetVerticeAtMeshIndex(int x, int z);
+	int		GetHeightFast(vec3& pos);
+	int		GetHeightSlow(vec3& pos);
+	void	UpdateWorldMatrix();
+	void	TransformVertices();
+	void	GetHeightOfAllVertices();
+	void	GetTrisUnderWater();
+	void	CreateKelvinImages();
+
+	// Wake by vao
+	void	UpdateWakeVao();
+
+	// SYSTEM OF FORCES
+	void	ComputeArchimede();
+	void    ComputeGravity();
+	void	ComputeHeave(float dt);
+	void	ComputeThrust(float dt);
+	void	ComputeResistanceViscous(float dt);
+	void	ComputeResistanceWaves(float dt);
+	void	ComputeResistanceResidual(float dt);
+	void	ComputeBowThrust(float dt);
+	void	ComputeRudder(float dt);
+	void	ComputeWind(float dt);
+	void	ComputeCentrifugal(float dt);
+	void	ComputeForces(float dt);
+	void	UpdateAutopilot(float dt);
+	void	UpdateVaoPressureLines();
+
+	void	UpdateSounds();
+	void	UpdateSmoke(float dt);
+	void	UpdateSpray(float dt);
+	void	UpdateWakeBuffer();
+	void	UpdateTextureWakeVao();
+
+	void	RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 color, bool bRenderOrigin);
+	void	RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 color, bool bRenderOrigin);
+	void	RenderNavLight(Camera& camera, int i, float distance);
+	void	RenderPropellers(Camera& camera, Sky* sky);
+	void	RenderRudders(Camera& camera, Sky* sky);
+	void	RenderRadars(Camera& camera, Sky* sky, bool bReflexion);
+
+	// Hull for physics
+	string				mPathnameHull;
+	Eigen::MatrixXd		mV;
+	Eigen::MatrixXi		mF;
+	vector<vec3>		mvVertices;
+	vector<float>		mvVertexColored;
+	vector<int>			mvVertSubmerged;
+	vector<float>		mvVertWaterHeight;
+	vector<sTriangle>	mvTris;
+	GLuint				mVaoHull = 0;
+	GLuint				mVboHull = 0;
+	GLuint				mEboHull = 0;
+	int					mIndicesFull;
+
+	// Full model
+	string				mPathnameFull;
+	sBBvec3				mBbox;					// Bounding box
+
+	// Hydrostatic pressure forces
+	GLuint				mVaoLines	= 0;
+	int					mLinesCount = 0;
 
 	// Forces
-	bool				bMotion				= true;
 	sForce				Archimede;
 	sForce				Gravity;
 	sForce				ResistanceHeave;
@@ -200,89 +301,6 @@ public:
 	sForce				Centrifugal;
 	sForce				COGSOG;
 
-private:
-	void	GetBoundingBox();
-	void	GetCentroid();
-	void	GetSurfaces();
-	void	GetVolume();
-	void	GetMomentsOfInertia();
-	void	GetWaterVertices();
-	
-	// Contour
-	vector<vec3> ComputeContour();
-	vector<vec3> ArrangeContour(const vector<vec3>& contourUnordered); 
-	vector<vec3> OffsetContour(const vector<vec3>& contour, float offset);
-
-	void	CreateTexWake(const vector<vec3>& contour);
-	void	CreateContourVAO1(vector<vec3>& contour);
-	void	CreateContourVAO2(vector<vec3>& contour);
-
-	void	CreateVAO();
-	void	CreatePressureLinesVAO();
-	int		GetHeightFast(vec3& pos);
-	int		GetHeightSlow(vec3& pos);
-	vec3	GetVerticeAtMeshIndex(int x, int z);
-	void	GetHDG();
-
-	void	UpdateWorldMatrix();
-	void	TransformVertices();
-	void	GetTriangles();
-	void	GetHeightOfAllVertices();
-	void	GetTrisUnderWater();
-
-	// Wake by vao
-	void	CreateWakeVao();
-	void	UpdateWakeVao();
-
-	// SYSTEM OF FORCES
-	void	ComputeArchimede();
-	void    ComputeGravity();
-	void	ComputeHeave(float dt);
-	void	ComputeThrust(float dt);
-	void	ComputeResistanceViscous(float dt);
-	void	ComputeResistanceWaves(float dt);
-	void	ComputeResistanceResidual(float dt);
-	void	ComputeBowThrust(float dt);
-	void	ComputeRudder(float dt);
-	void	ComputeWind(float dt);
-	void	ComputeCentrifugal(float dt);
-	void	ComputeForces(float dt);
-	void	ComputeAutopilot(float dt);
-
-	void	UpdateSounds();
-	void	UpdateSmoke(float dt);
-	void	UpdateWakeBuffer();
-	void	UpdateTextureWakeVao();
-
-	void	RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 color, bool bRenderOrigin);
-	void	RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 color, bool bRenderOrigin);
-	void	RenderNavLight(Camera& camera, int i, float distance);
-	void	RenderPropellers(Camera& camera, Sky* sky, bool bReflexion);
-	void	RenderRudders(Camera& camera, Sky* sky, bool bReflexion);
-	void	RenderRadars(Camera& camera, Sky* sky, bool bReflexion);
-
-	// Hull for physics
-	string				mPathnameHull;
-	Eigen::MatrixXd		mV;
-	Eigen::MatrixXi		mF;
-	vector<vec3>		mvVertices;
-	vector<float>		mvVertexColored;
-	vector<int>			mvVertSubmerged;
-	vector<float>		mvVertWaterHeight;
-	vector<sTriangle>	mvTris;
-
-	// Full model
-	string				mPathnameFull;
-	GLuint				mVao		= 0;
-	GLuint				mVbo		= 0;
-	GLuint				mEbo		= 0;
-	int					mIndicesFull;
-	sBBvec3				mBbox;					// Bounding box
-
-	// Hydrostatic pressure forces
-	GLuint				mVaoLines	= 0;
-	int					mLinesCount = 0;
-
 	// Models
 	unique_ptr<Model>	mModelFull;
 	unique_ptr<Model>	mPropeller;
@@ -290,6 +308,13 @@ private:
 	unique_ptr<Sphere>	mLight;
 	unique_ptr<Model>	mRadar1;
 	unique_ptr<Model>	mRadar2;
+
+	// Smoke
+	const int			mSmokeMaxParticles	= 5000;
+	GLuint				mSSBO_SMOKE			= 0;
+	GLuint				mVaoSmoke			= 0;
+	uint				mFrameSmokeCount	= 0;
+	GLuint				SSBO_LIVE_COUNTER	= 0;
 
 	// Shaders
 	unique_ptr<Shader>	mShaderHullColored;
@@ -299,9 +324,11 @@ private:
 	unique_ptr<Shader>	mShaderShip;
 	unique_ptr<Shader>	mShaderUnicolor;
 	unique_ptr<Shader>	mShaderNavLight;
+	unique_ptr<Shader>	mShaderSmokeCompute;
+	unique_ptr<Shader>	mShaderSmokeRender;
 
 	// Environment
-	unique_ptr<Texture>	mTexEnvironment;			// environment texture (shaderSky)
+	unique_ptr<Texture>	mTexEnvironment;			// Environment texture (shaderSky)
 	float				mEnvMapfactor = 0.0f;
 
 	Ocean			  * mOcean = nullptr;			// Reference to the ocean object
@@ -393,6 +420,22 @@ private:
 	unique_ptr<Shader>	mShaderGaussV;
 
 	unique_ptr<Shader>	mShaderWakeVaoToTex;
+
+	//= S P R A Y ==================================
+	
+	vector<sSprayPt>	mLeft;
+	vector<sSprayPt>	mRight;
+	float				mRandomOffsetRange = 0.1f;
+	unique_ptr<Spray>	mSpray;
+
+	//== TRACE =====================================
+	
+	const int			TEX_SIZE = 512;
+	GLuint			  * mTexTrace;
+	int					mTraceIdx = 0;		// Ping-pong index
+	unique_ptr<Shader>	mShaderTrace;
+	void				InitTrace();
+	void				UpdateTrace();
 
 	//==============================================
 

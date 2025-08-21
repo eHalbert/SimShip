@@ -1,6 +1,6 @@
 #pragma once
 
-// Copyright (c) 2018 Federico Vaccaro
+// Adapted from Federico Vaccaro
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

@@ -1,4 +1,4 @@
-#include "Camera.h"
+ï»¿#include "Camera.h"
 
 // Init
 void Camera::LookAt(vec3 cameraPos, vec3 cameraTarget, vec3 cameraUp)
@@ -66,7 +66,7 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
     vec2 mouseMove = mMousePos - mMousePosPrev;
     mMousePosPrev = mMousePos;
 
-    // Initialisation des targets la première frame
+    // Initialisation des targets la premiÃ¨re frame
     if (bFirstUpdate)
     {
         mPositionTarget = mPosition;
@@ -76,12 +76,12 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
         bFirstUpdate = false;
     }
 
-    // Flag pour savoir si la caméra a changé de mode
+    // Flag pour savoir si la camÃ©ra a changÃ© de mode
     static bool bCameraModeChanged = false;
 
     //constexpr int CAMERA_MODE_COUNT = 5;
 
-    // Gestion du changement de mode de caméra
+    // Gestion du changement de mode de camÃ©ra
     if (mKeyboardState[KeyboardControls::PreviousCamera] || mKeyboardState[KeyboardControls::NextCamera])
     {
         int dir = mKeyboardState[KeyboardControls::NextCamera] ? 1 : -1;
@@ -89,11 +89,11 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
         mKeyboardState[KeyboardControls::PreviousCamera] = false;
         mKeyboardState[KeyboardControls::NextCamera] = false;
 
-        bCameraModeChanged = true;  // le mode a changé
+        bCameraModeChanged = true;  // le mode a changÃ©
         mIsUnchanged = false;
     }
 
-    // Si on vient de changer de mode on réinitialise les cibles à l'état actuel
+    // Si on vient de changer de mode on rÃ©initialise les cibles Ã  l'Ã©tat actuel
     if (bCameraModeChanged)
     {
         mPositionTarget = mPosition;
@@ -109,12 +109,12 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
     {
         if (mMouseButtonState[MouseButtons::Left] && (mouseMove.x || mouseMove.y))
         {
+            // There is a new mouse position with a left clic
             mOrbitYaw += mouseMove.x * mRotateSpeed;
             mOrbitPitch += mouseMove.y * mRotateSpeed;
             mOrbitPitch = glm::clamp(mOrbitPitch, -glm::pi<float>() / 2.f + 0.1f, glm::pi<float>() / 2.f - 0.1f);
             mIsUnchanged = false;
         }
-
         mTargetPos = orbitalTarget;
 
         float x = mTargetPos.x + mOrbitRadius * cos(mOrbitPitch) * cos(mOrbitYaw);
@@ -232,7 +232,7 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
             mIsUnchanged = false;
         }
 
-        // Interpolation vers la target (à garder)
+        // Interpolation vers la target (Ã  garder)
         mPosition = view1Pos;
         mDirection = glm::normalize(glm::mix(mDirection, mDirectionTarget, t));
         mUp = vec3(0, 1, 0); //glm::normalize(glm::mix(mUp, mUpTarget, t));

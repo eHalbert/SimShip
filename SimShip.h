@@ -64,27 +64,26 @@ using namespace glm;
 namespace fs = std::filesystem;
 
 
-GLFWwindow        * g_hWindow		= nullptr;
-HWND				g_hWnd			= nullptr;
-uint32_t			g_WindowW		= 1600;
-uint32_t			g_WindowH		= 1000;
-uint32_t			g_WindowW_2		= 800;
-uint32_t			g_WindowH_2		= 500;
-uint32_t			g_WindowX		= 0;
-uint32_t			g_WindowY		= 0;
-bool                g_IsFullScreen	= false;
+GLFWwindow        * g_hWindow			= nullptr;
+HWND				g_hWnd				= nullptr;
+uint32_t			g_WindowW			= 1600;
+uint32_t			g_WindowH			= 1040;
+uint32_t			g_WindowW_2			= 800;
+uint32_t			g_WindowH_2			= 520;
+uint32_t			g_WindowX			= 0;
+uint32_t			g_WindowY			= 0;
+bool                g_IsFullScreen		= false;
 wstring				g_DirExecutable;
 HANDLE				g_hConsole;					// Handle of the console (can be shown and can be hidden)
-NVGcontext        * g_Nvg			= nullptr;
+NVGcontext        * g_Nvg				= nullptr;
 float				g_DevicePixelRatio = 1.0f;
+wstring				g_CaptureName;
 
 // ImGui windows
-bool                g_bShowSceneWindow			= true;		// [ F1 ]
-bool                g_bShowShipWindow			= true;     // [ F2 ]
+bool                g_bShowSceneWindow			= false;	// [ F1 ]
+bool                g_bShowShipWindow			= false;    // [ F2 ]
 bool                g_bShowStatusBar			= false;	// [ F3 ]
 bool                g_bShowOceanAnalysisWindow	= false;
-bool                g_bShowSphereMeasure		= false;
-bool                g_bShowTerrainWindow		= false;
 bool                g_bShowAutopilotWindow		= false;
 
 SoundManager* SoundManager::instance	= nullptr; // Initialisation du pointeur statique (sinon, à placer dans un fichier Sound.cpp)
@@ -98,7 +97,9 @@ vec2                g_InitialPosition	= vec2(-5.09732676, 48.47529221);
 vector<sPositions>	g_vPositions;					// List of positions to be used by the ship
 int					g_NoPosition		= 0;		// The number of the position in the list		
 Camera				g_Camera;
-bool				g_bZoomCamera		= false;
+bool				g_bBinoculars		= false;
+bool				g_bLowIntensity		= false;
+bool				g_bNightVision		= false;
 
 // TIME //////////////////////////////////////////
 LARGE_INTEGER		g_Frequency;
@@ -110,11 +111,12 @@ float				g_TimeSpeed			= 1.0f;
 bool				g_bPause			= false;
 bool				g_bVsync			= false;
 
-// SHADERS //////////////////////////////////////////
+// SHADERS ////////////////////////////////////////
 unique_ptr<Shader>  g_ShaderSun;
 unique_ptr<Shader>	g_ShaderCamera;
 unique_ptr<Shader>  g_ShaderPostProcessing;
-unique_ptr<Shader>  g_ShaderShadow;
+unique_ptr<Shader>  g_ShaderRain;
+unique_ptr<Shader>  g_ShaderFXAA;
 
 // FRAMEBUFFERS ////////////////////////////////////
 GLuint              FBO_REFLECTION		= 0;        // Used only for the ship reflection 
@@ -125,15 +127,17 @@ GLuint              msFBO_SCENE			= 0;        // Used to Draw the whole scene (i
 GLuint              msTexSceneColor		= 0;        // Multisample
 GLuint				msTexSceneDepth		= 0;        // Multisample
 
-GLuint              FBO_SCENE			= 0;        // Used to Draw the postprocessing (scene + blur + fog + underwater)
-GLuint              TexSceneColor		= 0;
+GLuint              FBO_SCENE			= 0;        // Used to blit multisample for postprocessing
+GLuint              TexSceneColor		= 0;		// The scene on a texture
 GLuint              TexSceneDepth		= 0;
 
-GLuint				FBO_SHADOWMAP		= 0;		// Shadow map
-GLuint				TexShadowMapDepth	= 0;
-int					shadowWidth			= 1024;
-int					shadowHeight		= 1024;
-mat4				lightSpaceMatrix;
+GLuint              FBO_POST			= 0;		// Used to Draw the postprocessing (in: TexSceneColor, TexSceneDepth)
+GLuint              TexPostColor		= 0;
+GLuint              TexPostDepth		= 0;
+
+GLuint              FBO_RAIN			= 0;		// Used to Draw the rain and/or the binoculars (in: TexPostColor)
+GLuint              TexRainColor		= 0;
+GLuint              TexRainDepth		= 0;
 
 unique_ptr<ScreenQuad> g_ScreenQuadPost;
 
@@ -143,9 +147,6 @@ unique_ptr<Grid>    g_Grid;
 bool				g_bGridVisible		= false;
 unique_ptr<Cube>    g_Axe;
 unique_ptr<Sphere>  g_FloatingBall;
-unique_ptr<Cube>    g_MobileWall;
-unique_ptr<Sphere>  g_SphereMeasure;
-vec3                g_SphereMeasurePos	= vec3(0.0f);
 unique_ptr<Model>   g_ArrowWind;
 unique_ptr<Model>   g_Pier;
 
@@ -157,7 +158,7 @@ float				g_WindSpeedKN		= 1.0f;
 // SHIP //////////////////////////////////////////
 unique_ptr<Ship>    g_Ship;						// The ship selected
 vector<sShip>       g_vShips;					// The list of ships
-int					g_NoShip			= 4;    // The number of the ship in the list
+int					g_NoShip			= 5;    // The number of the ship in the list
 bool                g_bShipWake			= true; // Display the wake (texture around the ship)
 int                 g_LowMass			= 0;	// Half of the mass (for ImGui selection purpose)
 int					g_HighMass			= 0;	// Double of the mass (for ImGui selection purpose)
@@ -174,6 +175,10 @@ vec4                g_CtrlAutopilotM10	= vec4(0.0f);
 vec4                g_CtrlAutopilotP1	= vec4(0.0f);
 vec4                g_CtrlAutopilotP10	= vec4(0.0f);
 vec4                g_CtrlAutopilotDynAdjust = vec4(0.0f);
+vec4                g_CtrlTimeHour		= vec4(0.0f);
+vec4				g_CtrlTimeMinute	= vec4(0.0f);
+vec4                g_CtrlWind			= vec4(0.0f);
+vec4                g_CtrlNow			= vec4(0.0f);
 
 // SKY ///////////////////////////////////////////
 unique_ptr<Sky>    g_Sky;
@@ -203,6 +208,7 @@ void    InitFBO();
 void	InitImGUI();
 void	InitNanoVg();
 void	InitFPSCounter();
+void	LoadPositions();
 void	LoadModels();
 void    LoadTerrains();
 void    LoadShips();

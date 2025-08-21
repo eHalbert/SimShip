@@ -32,6 +32,7 @@ using namespace glm;
 
 #define opengl_check {check_opengl_error(__FILE__, __func__, __LINE__);}
 
+
 void	InitConsole();
 void	ConsoleClose();
 void	ConsoleClear();
@@ -128,4 +129,4 @@ vector<string> ListFiles(const string& folder, const string& ext);
 
 vec3 ConvertToFloat(vec3 v);
 void RGBtoHSL(const vec3& rgb, float& h, float& s, float& l);
-void SaveClientArea(HWND hwnd);
+wstring SaveClientArea(HWND hwnd);

@@ -536,7 +536,7 @@ void SaveHBITMAP(HBITMAP bitmap, HDC hDC, wchar_t* filename)
     // Free memory
     GlobalFree((HGLOBAL)lpBits);
 }
-void SaveClientArea(HWND hwnd)
+wstring SaveClientArea(HWND hwnd)
 {
     // Get a compatible DC into the client area
     HDC hDC = GetDC(hwnd);
@@ -556,4 +556,6 @@ void SaveClientArea(HWND hwnd)
     DeleteObject(hBitmap);
     ReleaseDC(hwnd, hDC);
     DeleteDC(hTargetDC);
+
+    return name;
 }

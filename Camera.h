@@ -163,22 +163,22 @@ private:
     } MouseButtons;
 
     const map<int, int> mKeyboardMap = {
-        { GLFW_KEY_E, KeyboardControls::MoveUp },
-        { GLFW_KEY_Q, KeyboardControls::MoveDown },
-        { GLFW_KEY_A, KeyboardControls::MoveLeft },
-        { GLFW_KEY_D, KeyboardControls::MoveRight },
-        { GLFW_KEY_W, KeyboardControls::MoveForward },
-        { GLFW_KEY_S, KeyboardControls::MoveBackward },
-        { GLFW_KEY_LEFT, KeyboardControls::YawLeft },
-        { GLFW_KEY_RIGHT, KeyboardControls::YawRight },
-        { GLFW_KEY_UP, KeyboardControls::PitchUp },
-        { GLFW_KEY_DOWN, KeyboardControls::PitchDown },
-        { GLFW_KEY_Z, KeyboardControls::RollLeft },
-        { GLFW_KEY_X, KeyboardControls::RollRight },
-        { GLFW_KEY_C, KeyboardControls::PreviousCamera },
-        { GLFW_KEY_V, KeyboardControls::NextCamera },
-        { GLFW_KEY_LEFT_SHIFT, KeyboardControls::SpeedUp },
-        { GLFW_KEY_LEFT_CONTROL, KeyboardControls::SlowDown },
+        { GLFW_KEY_E,           KeyboardControls::MoveUp },
+        { GLFW_KEY_Q,           KeyboardControls::MoveDown },
+        { GLFW_KEY_A,           KeyboardControls::MoveLeft },
+        { GLFW_KEY_D,           KeyboardControls::MoveRight },
+        { GLFW_KEY_W,           KeyboardControls::MoveForward },
+        { GLFW_KEY_S,           KeyboardControls::MoveBackward },
+        { GLFW_KEY_LEFT,        KeyboardControls::YawLeft },
+        { GLFW_KEY_RIGHT,       KeyboardControls::YawRight },
+        { GLFW_KEY_UP,          KeyboardControls::PitchUp },
+        { GLFW_KEY_DOWN,        KeyboardControls::PitchDown },
+        { GLFW_KEY_Z,           KeyboardControls::RollLeft },
+        { GLFW_KEY_X,           KeyboardControls::RollRight },
+        { GLFW_KEY_C,           KeyboardControls::PreviousCamera },
+        { GLFW_KEY_V,           KeyboardControls::NextCamera },
+        { GLFW_KEY_LEFT_SHIFT,  KeyboardControls::SpeedUp },
+        { GLFW_KEY_LEFT_CONTROL,KeyboardControls::SlowDown },
     };
 
     const std::map<int, int> mMouseButtonMap = {

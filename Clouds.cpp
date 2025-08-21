@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Federico Vaccaro
+// Adapted from Federico Vaccaro
 
 #include "Clouds.h"
 #include <random>

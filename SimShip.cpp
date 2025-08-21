@@ -4,7 +4,7 @@ extern GLuint   TexWakeBuffer;
 extern int      TexWakeBufferSize;
 extern GLuint   TexWakeVao;
 extern int      TexWakeVaoSize;
-extern bool     bVAO;
+extern bool     bTexWakeByVAO;
 
 // Callbacks
 GLFWmonitor* get_current_monitor(GLFWwindow* window)
@@ -121,15 +121,44 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         cout << "Error creating FBO for the post processing" << endl;
 
+    // FBO normal for post processing ================================================
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_POST);
+
+    glBindTexture(GL_TEXTURE_2D, TexPostColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_WindowW, g_WindowH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, TexPostColor, 0);
+
+    glBindTexture(GL_TEXTURE_2D, TexPostDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, g_WindowW, g_WindowH, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexPostDepth, 0);
+
+    // FBO Verification
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        cout << "Error creating FBO for the post processing" << endl;
+
+    // FBO normal for rain & binoculars ================================================
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_RAIN);
+
+    glBindTexture(GL_TEXTURE_2D, TexRainColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_WindowW, g_WindowH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, TexRainColor, 0);
+
+    glBindTexture(GL_TEXTURE_2D, TexRainDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, g_WindowW, g_WindowH, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexRainDepth, 0);
+
     // Revert to default framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     g_Clouds.release();
     g_Clouds = make_unique<VolumetricClouds>(g_WindowW, g_WindowH);
     g_Sky.release();
-    g_Sky = make_unique<Sky>(g_WindowW, g_WindowH);
+    g_Sky = make_unique<Sky>(g_InitialPosition, g_WindowW, g_WindowH);
     g_Ocean.release();
     g_Ocean = make_unique<Ocean>(g_Wind, g_Sky.get());
+    g_Ship->SetOcean(g_Ocean.get());
 }
 void cursor_pos_callback(GLFWwindow* window, double xposIn, double yposIn)
 {
@@ -137,13 +166,106 @@ void cursor_pos_callback(GLFWwindow* window, double xposIn, double yposIn)
 }
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-    g_bZoomCamera = false;
-    if (!ImGui::GetIO().WantCaptureMouse)
+    double mouseX, mouseY;
+    glfwGetCursorPos(window, &mouseX, &mouseY);
+    vec2 mouse(mouseX, mouseY);
+    if (IsInRect(g_CtrlThrottle, mouse))
+    {
+        if (yoffset > 0)
+        {
+            g_Ship->PowerCurrentStep++;
+            if (g_Ship->PowerCurrentStep > g_Ship->ship.PowerStepMax)
+                g_Ship->PowerCurrentStep = g_Ship->ship.PowerStepMax;
+        }
+        else
+        {
+            g_Ship->PowerCurrentStep--;
+            if (g_Ship->PowerCurrentStep < -g_Ship->ship.PowerStepMax)
+                g_Ship->PowerCurrentStep = -g_Ship->ship.PowerStepMax;
+        }
+    }
+    else if (IsInRect(g_CtrlRudder, mouse))
+    {
+        if (yoffset < 0)
+        {
+            if (g_Ship->bAutopilot) g_Ship->bAutopilot = false;
+            g_Ship->RudderCurrentStep++;
+            if (g_Ship->RudderCurrentStep > g_Ship->ship.RudderStepMax)
+                g_Ship->RudderCurrentStep = g_Ship->ship.RudderStepMax;
+        }
+        else
+        {
+            if (g_Ship->bAutopilot) g_Ship->bAutopilot = false;
+            g_Ship->RudderCurrentStep--;
+            if (g_Ship->RudderCurrentStep < -g_Ship->ship.RudderStepMax)
+                g_Ship->RudderCurrentStep = -g_Ship->ship.RudderStepMax;
+        }
+    }
+    else if (IsInRect(g_CtrlTimeHour, mouse))
+    {
+        sHM hm = g_Sky->GetTime();
+        if (yoffset < 0)
+        {
+            hm.hour--;
+            if (hm.hour < 0.0f)
+                hm.hour = 0.0f;
+        }
+        else
+        {
+            hm.hour++;
+            if (hm.hour > 23.0f)
+                hm.hour = 23.0f;
+        }
+        g_Sky->SetTime(hm.hour, hm.minute);
+    }
+    else if (IsInRect(g_CtrlTimeMinute, mouse))
+    {
+        sHM hm = g_Sky->GetTime();
+        if (yoffset < 0)
+        {
+            hm.minute--;
+            if (hm.minute < 0)
+            {
+                if (hm.hour > 0)
+                {
+                    hm.minute = 59;
+                    hm.hour--;
+                }
+                else
+                    hm.minute = 0;
+            }
+        }
+        else
+        {
+            hm.minute++;
+            if (hm.minute > 59) 
+            {
+                if (hm.hour < 23)
+                {
+                    hm.minute = 0;
+                    hm.hour++;
+                }
+                else
+                    hm.minute = 59;
+            }
+        }
+        g_Sky->SetTime(hm.hour, hm.minute);
+    }
+    else if (IsInRect(g_CtrlWind, mouse))
+    {
+        if (yoffset < 0)
+            g_WindSpeedKN--;
+        else
+            g_WindSpeedKN++;
+        g_WindSpeedKN = glm::clamp(g_WindSpeedKN, 1.0f, 30.0f);
+        g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
+        g_Ocean->GetWind(g_Wind);
+        g_Ocean->InitFrequencies();
+    }
+    else if (!ImGui::GetIO().WantCaptureMouse)
     {
         if (g_Camera.GetMode() == eCameraMode::ORBITAL)
             g_Camera.AdjustOrbitRadius(-yoffset * 0.1f * g_Camera.GetOrbitRadius());
-        else if (g_Camera.GetMode() == eCameraMode::IN_FIXED || g_Camera.GetMode() == eCameraMode::IN_FREE)
-            g_bZoomCamera = yoffset > 0 ? true :  false;
     }
 }
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
@@ -201,8 +323,15 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
             float valeur = 1 - (mouse.x - g_CtrlRudderLeft) / (g_CtrlRudderRight - g_CtrlRudderLeft);
             g_Ship->RudderCurrentStep = (valeur - 0.5f) * (2.0f * g_Ship->ship.RudderStepMax);
         }
+        if (IsInRect(g_CtrlNow, mouse))
+        {
+            g_Sky->SetNow();
+        }
     }
    
+    if (button == 1 && action == GLFW_PRESS)
+        g_bBinoculars = !g_bBinoculars;
+
     if (!ImGui::GetIO().WantCaptureMouse)
         g_Camera.MouseButtonUpdate(button, action, mods);
 }
@@ -226,7 +355,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             break;
         // Horn
         case GLFW_KEY_H:
-            g_SoundHorn->play();
+            if (g_SoundMgr->bSound && g_Ship->bSound)
+                g_SoundHorn->play();
             break;
         case GLFW_KEY_I:
         {
@@ -241,6 +371,9 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             break;
         case GLFW_KEY_KP_ADD:
             g_Ship->SurgeVelocity++;
+            break;
+        case GLFW_KEY_KP_MULTIPLY:
+            g_Ship->SurgeVelocity = KnotsToMS(g_Ship->ship.SpeedMaxKn);
             break;
         // Textures
         case GLFW_KEY_T:
@@ -315,7 +448,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             break;
         break;
         case GLFW_KEY_F8:
-            SaveClientArea(g_hWnd);
+            g_CaptureName = SaveClientArea(g_hWnd);
             break;
         case GLFW_KEY_F11:
             SwitchToFullScreen();
@@ -348,6 +481,26 @@ void debugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsiz
 
     cout << endl;
     cout << "Message : " << message << endl;
+}
+void debugCallbackToFile(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    // Ignore les notifications non critiques
+    if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) return;
+
+    // Ouvre le fichier en mode ajout (append)
+    static ofstream file("Outputs/opengl_log.txt", ios::app);
+    if (!file.is_open()) return;
+
+    switch (severity)
+    {
+    case GL_DEBUG_SEVERITY_HIGH:         file << "SEVERITY_HIGH"; break;
+    case GL_DEBUG_SEVERITY_MEDIUM:       file << "SEVERITY_MEDIUM"; break;
+    case GL_DEBUG_SEVERITY_LOW:          file << "SEVERITY_LOW"; break;
+    default:                             file << "SEVERITY_UNKNOWN"; break;
+    }
+
+    file << endl;
+    file << "Message : " << message << endl;
 }
 
 #ifdef _DEBUG
@@ -427,6 +580,7 @@ int main()
     glEnable(GL_DEBUG_OUTPUT);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
     glDebugMessageCallback(debugCallback, nullptr);
+    //glDebugMessageCallback(debugCallbackToFile, nullptr);
 #endif
 
     //GetLimitsGPU();
@@ -442,7 +596,7 @@ int main()
     {
         // Camera zoom
         static float fov = g_Camera.GetZoom();
-        if (g_bZoomCamera)
+        if (g_bBinoculars && g_Camera.GetPosition().y > 0.0f)
             g_Camera.SetZoom(15.0f);
         else
             g_Camera.SetZoom(fov);
@@ -466,9 +620,6 @@ int main()
 
         }
 
-        UpdateFPS();
-        UpdateSounds();
-        
         // Updates
         if (g_Ocean)    g_Ocean->Update(g_TimeSpeed * g_Timer.getTime());
         if (g_Ship)     g_Ship->Update(g_TimeSpeed * g_Timer.getTime());
@@ -479,6 +630,9 @@ int main()
             g_Ocean->GetRecordFromBuoy(vec2(0.0f, 0.0f), g_TimeSpeed * g_Timer.getTime());
         counter++;
 #endif
+        UpdateFPS();
+        UpdateSounds();
+
         // Render all
         Render();
 
@@ -514,8 +668,8 @@ int main()
 // Init
 void InitScene()
 {
-    // Start position
-    g_InitialPosition = vec2(-5.09732676, 48.47529221);
+    // All positions
+    LoadPositions();
     
     // Camera
     g_Camera.SetProjection(45.0f, g_WindowW, g_WindowH, 0.1f, 30000.f);
@@ -530,7 +684,7 @@ void InitScene()
     g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
     
     // Sky & Clouds
-    g_Sky = make_unique<Sky>(g_WindowW, g_WindowH);
+    g_Sky = make_unique<Sky>(g_InitialPosition, g_WindowW, g_WindowH);
     g_Clouds = make_unique<VolumetricClouds>(g_WindowW, g_WindowH);
 
     // Shaders
@@ -538,8 +692,9 @@ void InitScene()
     g_ShaderCamera = make_unique<Shader>("Resources/Shaders/camera.vert", "Resources/Shaders/camera.frag");     // Light from camera
     g_ShaderBackground = make_unique<Shader>("Resources/Clouds/background.vert", "Resources/Clouds/background.frag");     // To draw the clouds in a separate process
     g_ShaderPostProcessing = make_unique<Shader>("Resources/Shaders/post_processing.vert", "Resources/Shaders/post_processing.frag");   // Mist + fog + underwater
-    g_ShaderShadow = make_unique<Shader>("Resources/Shaders/shadow.vert", "Resources/Shaders/shadow.frag");
-
+    g_ShaderFXAA = make_unique<Shader>("Resources/Shaders/fxaa.vert", "Resources/Shaders/fxaa.frag");
+    g_ShaderRain = make_unique<Shader>("Resources/Sky/rain.vert", "Resources/Sky/rain.frag");
+    
     // Models
     LoadModels();
 
@@ -555,7 +710,7 @@ void InitScene()
 
     // Terrains
     LoadTerrains();
-    
+
     // Markup
     g_Markup = make_unique<Markup>(L"Resources/Terrains/Houat/Markup-houat.xml");
 
@@ -619,7 +774,7 @@ void InitFBO()
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         cout << "Error creating FBO for the scene" << endl;
 
-    // FBO normal for post processing ================================================
+    // FBO normal (blit from the multisample FBO ================================================
     
     glGenFramebuffers(1, &FBO_SCENE);
     glBindFramebuffer(GL_FRAMEBUFFER, FBO_SCENE);
@@ -646,30 +801,60 @@ void InitFBO()
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         cout << "Error creating FBO for the post processing" << endl;
     
-    // FBO for the shadow map ========================================================
+    // FBO normal for post processing ================================================
 
-    // Shadow map
-    glGenTextures(1, &TexShadowMapDepth);
-    glBindTexture(GL_TEXTURE_2D, TexShadowMapDepth);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowWidth, shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    glGenFramebuffers(1, &FBO_POST);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_POST);
 
-    glGenFramebuffers(1, &FBO_SHADOWMAP);
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO_SHADOWMAP);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexShadowMapDepth, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // Create a non-multisample texture for color
+    glGenTextures(1, &TexPostColor);
+    glBindTexture(GL_TEXTURE_2D, TexPostColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_WindowW, g_WindowH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, TexPostColor, 0);
+
+    // Create a non-multisample texture for depth
+    glGenTextures(1, &TexPostDepth);
+    glBindTexture(GL_TEXTURE_2D, TexPostDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, g_WindowW, g_WindowH, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexPostDepth, 0);
+
+    glDrawBuffers(1, drawBuffers);
 
     // FBO Verification
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         cout << "Error creating FBO for the post processing" << endl;
     
+    // FBO normal for rain & binoculars ================================================
+
+    glGenFramebuffers(1, &FBO_RAIN);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_RAIN);
+
+    // Create a non-multisample texture for color
+    glGenTextures(1, &TexRainColor);
+    glBindTexture(GL_TEXTURE_2D, TexRainColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, g_WindowW, g_WindowH, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, TexRainColor, 0);
+
+    // Create a non-multisample texture for depth
+    glGenTextures(1, &TexRainDepth);
+    glBindTexture(GL_TEXTURE_2D, TexRainDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, g_WindowW, g_WindowH, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexRainDepth, 0);
+
+    glDrawBuffers(1, drawBuffers);
+
+    // FBO Verification
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        cout << "Error creating FBO for the post processing" << endl;
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     ////////////////////
@@ -698,12 +883,52 @@ void InitNanoVg()
 
     int font = nvgCreateFont(g_Nvg, "arial", "c:/Windows/Fonts/Arial.ttf");
     if (font == -1)
-        printf("Unable to load font.\n");   // Handle font loading error
+        printf("Unable to load arial font.\n");   // Handle font loading error
+
+    int fontId = nvgCreateFont(g_Nvg, "caveat", "Resources/Interface/Caveat.ttf");
+    if (fontId == -1)  
+        printf("Failed to load Caveat font.\n");
 }
 void InitFPSCounter()
 {
     QueryPerformanceFrequency(&g_Frequency);
     QueryPerformanceCounter(&g_LastTime);
+}
+void LoadPositions()
+{
+    if (g_vPositions.size() == 0)
+    {
+        sPositions sList;
+        sList.name = "Treac'h er Goured";
+        sList.pos = vec2(-2.94097114, 47.38162231);
+        sList.heading = -90.0f;// 305.0f;
+        g_vPositions.push_back(sList);
+
+        sList.name = "Port de Houat";
+        sList.pos = vec2(-2.95672011, 47.39293289);
+        sList.heading = 119.0f;
+        g_vPositions.push_back(sList);
+
+        sList.name = "Nord du port de Houat";
+        sList.pos = vec2(-2.95201015, 47.39797974);
+        sList.heading = 191.0f;
+        g_vPositions.push_back(sList);
+
+        sList.name = "Sud Béniguet";
+        sList.pos = vec2(-3.01105905, 47.39477158);
+        sList.heading = 34.0f;
+        g_vPositions.push_back(sList);
+
+        sList.name = "Tréach er Salus";
+        sList.pos = vec2(-2.96275711, 47.38032913);
+        sList.heading = 288.0f;
+        g_vPositions.push_back(sList);
+
+        sList.name = "La Teignouse";
+        sList.pos = vec2(-3.03526974, 47.45735550);
+        sList.heading = 150.0f;
+        g_vPositions.push_back(sList);
+    }
 }
 void LoadModels()
 {
@@ -720,16 +945,8 @@ void LoadModels()
     g_Axe = make_unique<Cube>();
     g_Axe->bVisible = false;
 
-    // Sphere Measurement
-    g_SphereMeasure = make_unique<Sphere>(0.5f, 16);
-    g_SphereMeasure->bVisible = false;
-
-	// Mobile wall
-    g_MobileWall = make_unique<Cube>();
-    g_MobileWall->bVisible = false;
-
     // Arrow for the wind
-    g_ArrowWind = make_unique<Model>("Resources/Models/direction_wind.glb");
+    g_ArrowWind = make_unique<Model>("Resources/Interface/direction_wind.glb");
     g_ArrowWind->bVisible = false;
 }
 void ReadObjHeader(sTerrain& terrain)
@@ -787,7 +1004,6 @@ void LoadShips()
     if(g_vShips.size() == 0)
     {
         sShip ship;
-  
 #pragma region Support Vessel
         // Names
         ship.ShortName = "Support vessel";
@@ -803,10 +1019,17 @@ void LoadShips()
         ship.View1 = vec3(12.74f, 9.7f, 0.0f);
         ship.View2 = vec3(-20.55f, 6.2f, -4.82f);
         ship.Length = 51.30f;
+        ship.SpeedMaxKn = 15.8f;
         ship.Mass_t = 1100.0f;
         ship.PosGravity = vec3(0.4f, -2.5f, 0.0f);
-        ship.EnvMapfactor = 0.1f;
-       // Rudders
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.1f;
+        // Spray
+        ship.SprayVerticalPerf = 10.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.15f;
+        ship.SprayType = 1;
+        // Rudders
         ship.PosRudder = vec3(-10.5f, -1.5f, 0.0f);
         ship.RudderIncrement = 1.0f;
         ship.RudderStepMax = 35;
@@ -824,7 +1047,6 @@ void LoadShips()
         ship.PosPower = vec3(-9.5f, -1.6f, 0.0f);
         ship.PowerPerf = 0.15f;
         ship.PowerkW = 1000.0f;
-        ship.MaxStaticThrust = 1000.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 300.0f;
@@ -868,11 +1090,13 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 20.0f;
-        ship.MaxIntegral = 10.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 10.0f;	
+        ship.SpeedFactor = 5.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 60.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -889,9 +1113,16 @@ void LoadShips()
         ship.View1 = vec3(0.16f, 5.0f, 0.98f);
         ship.View2 = vec3(-0.1f, 3.2f, 1.0f);
         ship.Length = 13.14f;
+        ship.SpeedMaxKn = 20.8f;
         ship.Mass_t = 15.0f;
         ship.PosGravity = vec3(-0.7f, -0.5f, 0.0f);
-        ship.EnvMapfactor = 0.2f;
+        ship.HeavePerf = 3.0f;
+        ship.EnvMapFactor = 0.2f;
+        // Spray
+        ship.SprayVerticalPerf = 3.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.15f;
+        ship.SprayType = 0;
         // Rudders
         ship.PosRudder = vec3(-6.0f, -0.7f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -923,7 +1154,7 @@ void LoadShips()
         ship.WakeWidth = 1.1f;
         ship.ThrustSound = "Resources/Sounds/Engine2.wav";
         // Bow thruster
-        ship.HasBowThruster = true;
+        ship.HasBowThruster = false;
         // Lights
         ship.LightPositions.clear();
         ship.LightColors.clear();
@@ -941,11 +1172,13 @@ void LoadShips()
         ship.BaseP = 0.5f;
         ship.BaseI = 0.1f;
         ship.BaseD = 1.0f;
-        ship.MaxIntegral = 5.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 5.0f;	
+        ship.SpeedFactor = 5.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 2.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -963,9 +1196,16 @@ void LoadShips()
         ship.View1 = vec3(6.58f, 3.3f, 0.0f);
         ship.View2 = vec3(-9.0f, 2.0f, 0.0f);
         ship.Length = 19.37f;
+        ship.SpeedMaxKn = 15.0f;
         ship.Mass_t = 48.0f;
         ship.PosGravity = vec3(0.0f, -0.5f, 0.0f);
-        ship.EnvMapfactor = 0.5f;
+        ship.HeavePerf = 2.0f;
+        ship.EnvMapFactor = 0.5f;
+        // Spray
+        ship.SprayVerticalPerf = 2.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.15f;
+        ship.SprayType = 1;
         // Rudders
         ship.PosRudder = vec3(-9.0f, -0.6f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -982,7 +1222,7 @@ void LoadShips()
         ship.Rudder2 = vec3(-9.0f, -0.2f, 0.75f);
         // Power
         ship.PosPower = vec3(-8.2f, -0.75f, 0.0f);
-        ship.PowerPerf = 0.08f;
+        ship.PowerPerf = 0.051f; 
         ship.PowerkW = 150.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
@@ -1017,11 +1257,13 @@ void LoadShips()
         ship.BaseP = 0.5f;
         ship.BaseI = 0.1f;
         ship.BaseD = 1.0f;
-        ship.MaxIntegral = 2.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 3.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 2.0f;	
+        ship.SpeedFactor = 3.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 35.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1039,9 +1281,16 @@ void LoadShips()
         ship.View1 = vec3(6.8f, 4.2f, 0.0f);
         ship.View2 = vec3(-8.5f, 3.2f, 1.7f);
         ship.Length = 21.2f;
+        ship.SpeedMaxKn = 15.0f;
         ship.Mass_t = 48.0f;
         ship.PosGravity = vec3(0.0f, -0.5f, 0.0f);
-        ship.EnvMapfactor = 0.5f;
+        ship.HeavePerf = 2.0f;
+        ship.EnvMapFactor = 0.5f;
+        // Spray
+        ship.SprayVerticalPerf = 3.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.15f;
+        ship.SprayType = 1;
         // Rudders
         ship.PosRudder = vec3(-9.0f, -0.6f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1057,7 +1306,7 @@ void LoadShips()
         ship.Rudder1 = vec3(-8.5f, -0.1f, 0.0f);
         // Power
         ship.PosPower = vec3(-8.166f, -0.61f, 0.0f);
-        ship.PowerPerf = 0.1f;
+        ship.PowerPerf = 0.07f;  
         ship.PowerkW = 150.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
@@ -1092,11 +1341,13 @@ void LoadShips()
         ship.BaseP = 0.5f;
         ship.BaseI = 0.1f;
         ship.BaseD = 1.0f;
-        ship.MaxIntegral = 2.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 3.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 2.0f;	
+        ship.SpeedFactor = 3.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 40.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1113,9 +1364,16 @@ void LoadShips()
         ship.View1 = vec3(5.99f, 5.8613f, 0.0f);
         ship.View2 = vec3(5.99f, 6.6f, 0.0f);
         ship.Length = 53.98f;
+        ship.SpeedMaxKn = 14.4f;
         ship.Mass_t = 1300.0f;
         ship.PosGravity = vec3(0.4f, -2.5f, 0.0f);
-        ship.EnvMapfactor = 0.1f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.1f;
+        // Spray
+        ship.SprayVerticalPerf = 10.0f;
+        ship.SprayMultiplier = 3;
+        ship.SprayLength = 0.1f;
+        ship.SprayType = 0;
         // Rudders
         ship.PosRudder = vec3(-24.022f, -2.4748f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1133,12 +1391,12 @@ void LoadShips()
         ship.PosPower = vec3(-27.0f, -2.7118f, 0.0f);
         ship.PowerPerf = 0.03f;
         ship.PowerkW = 3700.0f;
-        ship.MaxStaticThrust = 1000.0f;
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
         ship.PowerRpmMax = 250.0f;
         ship.PowerRpmIncrement = 30.f;
-        ship.nChimney = 0;
+        ship.nChimney = 1;
+        ship.Chimney1 = vec3(0.7117f, 10.127f, 0.0f);
         ship.nPropeller = 1;
         ship.Propeller1 = vec3(-26.346f, -2.7118f, 0.0f);
         ship.WakeWidth = 0.3f;
@@ -1162,11 +1420,13 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 5.0f;
-        ship.MaxIntegral = 3.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 3.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 3.0f;	
+        ship.SpeedFactor = 3.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 0.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1185,9 +1445,16 @@ void LoadShips()
         ship.View1 = vec3(4.9f, 8.0f, -1.0f);
         ship.View2 = vec3(-28.0f, 4.3f, 3.2f);
         ship.Length = 59.83f;
+        ship.SpeedMaxKn = 19.2f;
         ship.Mass_t = 820.0f;
         ship.PosGravity = vec3(-2.4f, -1.9f, 0.0f);
-        ship.EnvMapfactor = 0.1f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.1f;
+        // Spray
+        ship.SprayVerticalPerf = 5.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.15f;
+        ship.SprayType = 0;
         // Rudders
         ship.PosRudder = vec3(-28.0f, -2.4f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1249,14 +1516,16 @@ void LoadShips()
         ship.Radar2 = vec3(-2.9006f, 14.244f, -1.4877f);
         ship.RotationRadar2 = 20.0f;
         // Autopilot
-        ship.BaseP = 2.0f;
+        ship.BaseP = 1.0f;
         ship.BaseI = 0.3f;
-        ship.BaseD = 20.0f;
-        ship.MaxIntegral = 10.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.BaseD = 5.0f;
+        ship.MaxIntegral = 5.0f;	
+        ship.SpeedFactor = 2.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 60.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1274,9 +1543,16 @@ void LoadShips()
         ship.View1 = vec3(-30.5f, 9.5f, 0.0f);
         ship.View2 = vec3(-30.5f, 9.5f, -5.8f);
         ship.Length = 90.99f;
+        ship.SpeedMaxKn = 15.5f;
         ship.Mass_t = 4000.0f;
         ship.PosGravity = vec3(-0.5f, -1.9f, 0.0f);
-        ship.EnvMapfactor = 0.25f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.25f;
+        // Spray
+        ship.SprayVerticalPerf = 20.0f;
+        ship.SprayMultiplier = 5;
+        ship.SprayLength = 0.1f;
+        ship.SprayType = 1;
         // Rudders
         ship.PosRudder = vec3(-44.0f, -2.4f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1292,7 +1568,7 @@ void LoadShips()
         ship.Rudder1 = vec3(-43.5f, -0.5f,0.0f);
         // Power
         ship.PosPower = vec3(-42.5f, -2.8f, 0.0f);
-        ship.PowerPerf = 0.17f;
+        ship.PowerPerf = 0.12f;
         ship.PowerkW = 1600.0f;	
         ship.PowerStepMax = 10;
         ship.PowerRpmMin = 0.0f;
@@ -1335,11 +1611,13 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 20.0f;
-        ship.MaxIntegral = 10.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 10.0f;	
+        ship.SpeedFactor = 5.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 120.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1358,9 +1636,16 @@ void LoadShips()
         ship.View1 = vec3(24.0f, 11.068f, 0.0f);
         ship.View2 = vec3(-59.561f, 6.3f, 0.0f);
         ship.Length = 134.59f;
+        ship.SpeedMaxKn = 27.1f;
         ship.Mass_t = 3963.0f;
         ship.PosGravity = vec3(-8.0f, -2.3f, -0.18f);
-        ship.EnvMapfactor = 0.25f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.25f;
+        // Spray
+        ship.SprayVerticalPerf = 20.0f;
+        ship.SprayMultiplier = 2;
+        ship.SprayLength = 0.1f;
+        ship.SprayType = 0;
         // Rudders
         ship.PosRudder = vec3(-62.401f, -2.5f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1416,11 +1701,13 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 10.0f;
-        ship.MaxIntegral = 5.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 50.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 5.0f;	
+        ship.SpeedFactor = 50.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 60.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1438,9 +1725,16 @@ void LoadShips()
         ship.View1 = vec3(-93.0f, 24.5f, 2.0f);
         ship.View2 = vec3(-91.3f, 24.5f, 22.5f);
         ship.Length = 273.09f;
+        ship.SpeedMaxKn = 22.8f;
         ship.Mass_t = 130000.0f;
         ship.PosGravity = vec3(6.0f, -5.0f, 0.0f);
-        ship.EnvMapfactor = 0.1f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.1f;
+        // Spray
+        ship.SprayVerticalPerf = 20.0f;
+        ship.SprayMultiplier = 10;
+        ship.SprayLength = 0.1f;
+        ship.SprayType = 1;
         // Rudders
         ship.PosRudder = vec3(-133.0f, -4.15f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1500,11 +1794,13 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 20.0f;
-        ship.MaxIntegral = 10.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 10.0f;	
+        ship.SpeedFactor = 5.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;
+        ship.SeaSateFactor = 1.0f;
+        // Waves
+        ship.CenterFore = 170.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
@@ -1523,9 +1819,16 @@ void LoadShips()
         ship.View1 = vec3(-69.83f, 45.85f, -2.3f);
         ship.View2 = vec3(-70.5f, 44.7f, -25.857f);
         ship.Length = 273.09f;
+        ship.SpeedMaxKn = 22.6f;
         ship.Mass_t = 160000.0f;
         ship.PosGravity = vec3(10.0f, -6.0f, 0.0f);
-        ship.EnvMapfactor = 0.05f;
+        ship.HeavePerf = 1.0f;
+        ship.EnvMapFactor = 0.05f;
+        // Spray
+        ship.SprayVerticalPerf = 10.0f;
+        ship.SprayMultiplier = 20;
+        ship.SprayLength = 0.1f;
+        ship.SprayType = 1;
         // Rudders
         ship.PosRudder = vec3(-135.32f, -2.24f, 0.0f);
         ship.RudderIncrement = 1.0f;
@@ -1579,52 +1882,18 @@ void LoadShips()
         ship.BaseP = 2.0f;
         ship.BaseI = 0.3f;
         ship.BaseD = 20.0f;
-        ship.MaxIntegral = 10.0f;	// Limit of the integral to avoid runaway
-        ship.SpeedFactor = 5.0f;	// Factor to adjust the influence of speed
-        ship.MinSpeed = 1.0f;		// Minimum speed to avoid division by zero
-        ship.LowSpeedBoost = 2.0f;	// Low speed amplification factor
-        ship.SeaSateFactor = 1.0f;	// Increases responsiveness in difficult conditions (Pitch and Roll)
+        ship.MaxIntegral = 10.0f;	
+        ship.SpeedFactor = 5.0f;	
+        ship.MinSpeed = 1.0f;		
+        ship.LowSpeedBoost = 2.0f;	
+        ship.SeaSateFactor = 1.0f;	
+        // Waves
+        ship.CenterFore = 180.0f;
         g_vShips.push_back(ship);
 #pragma endregion
 
     }
-
-#pragma region Positions
-    if (g_vPositions.size() == 0)
-    {
-        sPositions sList;
-        sList.name = "Treac'h er Goured";
-        sList.pos = vec2(-2.94097114, 47.38162231);
-        sList.heading = 305.0f;
-        g_vPositions.push_back(sList);
-
-        sList.name = "Port de Houat";
-        sList.pos = vec2(-2.95672011, 47.39293289);
-        sList.heading = 119.0f;
-        g_vPositions.push_back(sList);
-
-        sList.name = "Nord du port de Houat";
-        sList.pos = vec2(-2.95201015, 47.39797974);
-        sList.heading = 191.0f;
-        g_vPositions.push_back(sList);
-
-        sList.name = "Sud Béniguet";
-        sList.pos = vec2(-3.01105905, 47.39477158);
-        sList.heading = 34.0f;
-        g_vPositions.push_back(sList);
-
-        sList.name = "Tréach er Salus";
-        sList.pos = vec2(-2.96275711, 47.38032913);
-        sList.heading = 288.0f;
-        g_vPositions.push_back(sList);
-
-        sList.name = "La Teignouse";
-        sList.pos = vec2(-3.03526974, 47.45735550);
-        sList.heading = 150.0f;
-        g_vPositions.push_back(sList);
-    }
-#pragma endregion
-    
+   
     // Ship
     g_Ship.reset();
 
@@ -1652,7 +1921,7 @@ void LoadSounds()
         g_SoundSeagull[i]->setPosition(vec3(0.0, 10.0f, 0.0f));
         g_SoundSeagull[i]->adjustDistances();
     }
-    g_bSoundSeagull = true;
+    g_bSoundSeagull = false;
 
     g_SoundHorn = make_unique<Sound>("Resources/Sounds/Horn1.wav");
     g_SoundHorn->setVolume(1.0f);
@@ -1675,6 +1944,9 @@ void UpdateFPS()
 }
 void UpdateSounds()
 {
+    if (!g_SoundMgr->bSound)
+        return;
+
     g_SoundMgr->setListenerPosition(g_Camera.GetPosition());
     g_SoundMgr->setListenerOrientation(g_Camera.GetAt(), g_Camera.GetUp());
     g_SoundHorn->setPosition(g_Ship->ship.Position);
@@ -1736,11 +2008,6 @@ void RenderBalls()
     if (g_Ocean->GetVertice(vec2(dim - 0.01f, dim - 0.01f), pos))
         g_FloatingBall->Render(g_Camera, pos, 1.0f, vec3(1.0f, 0.4f, 0.5f));
 }
-void RenderMeasure()
-{
-    // Sphere of measure
-    g_SphereMeasure->Render(g_Camera, g_Ship->ship.Position + g_SphereMeasurePos, 1.0f, vec3(1.0f, 0.5f, 0.0f));
-}
 void RenderCentralGridColored()
 {
     if (!g_bGridVisible)
@@ -1801,48 +2068,6 @@ void RenderExternalGridsAround()
         }
     }
 }
-void RenderMobile(float speedKn)
-{
-    if (!g_MobileWall->bVisible)
-        return;
-
-    const float mobileSpeed = KnotsToMS(speedKn);
-    const float dist = 100.0f;
-
-    // Position statique du mobile sur XZ (conservée d'une frame à l'autre)
-    static glm::vec2 posXZ = glm::vec2(0.0f, 0.0);
-    static double time = g_TimeSpeed * g_Timer.getTime();
-    float t = g_TimeSpeed * g_Timer.getTime();
-
-    // Calcul direction du vent XZ normalisée
-    glm::vec2 windDir = glm::normalize(g_Wind);
-    if (glm::length(windDir) < 1e-6f) windDir = glm::vec2(0, 1);
-
-    // Mise à jour position selon la direction du vent et le temps écoulé
-    float dt = float(t - time);  // Delta temps depuis la dernière frame
-    posXZ += windDir * (dt * mobileSpeed);
-
-    // Rebouclage éventuel (adapte à ta scène)
-    if (posXZ.x < -dist) posXZ.x += dist;
-    if (posXZ.x > dist) posXZ.x -= dist;
-    if (posXZ.y < -dist) posXZ.y += dist;
-    if (posXZ.y > dist) posXZ.y -= dist;
-
-    // Calcul angle du vent (XZ)
-    float windAngle = atan2(windDir.x, windDir.y);
-    // Rotation à 90° = ajoute pi/2 (pour être perpendiculaire au vent)
-    float rotAngle = windAngle + glm::pi<float>();
-
-    // Matrice modèle = translation + rotation + scale
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), -glm::vec3(posXZ.x, 0.0f, posXZ.y));
-    model = glm::rotate(model, rotAngle, glm::vec3(0, 1, 0));
-    model = glm::scale(model, glm::vec3(32.0f, 2.0f, 0.1f));
-
-    g_MobileWall->RenderDistorted(g_Camera, model, glm::vec3(0.7f, 0.7f, 0.0f));
-
-    // Mets à jour le temps de référence pour la prochaine frame
-    time = t;
-}
 void RenderOcean()
 {
     if (!g_Ocean)
@@ -1854,7 +2079,9 @@ void RenderOcean()
     if (!g_bWireframe && g_bOceanWireframe) 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     
-    g_Ocean->Render(g_TimeSpeed * g_Timer.getTime(), g_Camera, g_Ship->ship.Position, g_Ship->Yaw);
+    float waveLength = glm::two_pi<float>() * g_Ship->Velocity * g_Ship->Velocity / 9.81f;  // length between 2 crests
+    float kelvinScale = 101.0f / waveLength;                // the texture is 1024 and there are 9 wavelengths in 910 pixels
+    g_Ocean->Render(g_TimeSpeed * g_Timer.getTime(), g_Camera, g_Ship->ship.Position, g_Ship->Yaw, g_Ship->bWaves, g_Ship->LWL, kelvinScale, g_Ship->Velocity, g_Ship->ship.CenterFore);
 
     if (!g_bWireframe && g_bOceanWireframe) 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -1868,7 +2095,7 @@ void RenderShip()
         return;
 
     if (g_Ship)
-        g_Ship->Render(g_Camera, g_Sky.get(), false);
+        g_Ship->Render(g_Camera, g_Sky.get());
 }
 void RenderTerrains(int t)
 {
@@ -1896,7 +2123,7 @@ void RenderTerrains(int t)
         g_vTerrains[t].model->Render(*g_ShaderSun);
     }
     
-    if (g_vTerrains[0].model->bVisible)
+    if (g_vTerrains[0].model->bVisible && g_Pier)
         g_Pier->Render(*g_ShaderSun);
 }
 void RenderArrowWind()
@@ -1962,7 +2189,7 @@ void RenderImGui()
             ImGui::SameLine();
             ImGui::Text("-> FPS = %d", g_Fps);
             ImGui::SameLine();
-            double elapsed = ImGui::GetTime();  // seconds elapsed since the start of the program or ImGui
+            double elapsed = ImGui::GetTimeGMT();  // seconds elapsed since the start of the program or ImGui
             int hours = static_cast<int>(elapsed) / 3600;
             int minutes = (static_cast<int>(elapsed) % 3600) / 60;
             int seconds = static_cast<int>(elapsed) % 60;
@@ -1973,7 +2200,7 @@ void RenderImGui()
             ImGui::Text("%s", buffer);
             ImGui::SetWindowFontScale(1.0f);
             ImGui::PopStyleColor();
-
+            // ------------
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
             // Camera type
             switch (g_Camera.GetMode())
@@ -1995,9 +2222,11 @@ void RenderImGui()
             case eInterpolation::EaseInOut: ImGui::Text("( EaseInOut )");   break;
             }
             ImGui::PopStyleColor(1);                                                            
-
-            ImGui::Checkbox("Wireframe##1", &g_bWireframe);
+            // ------------
+            ImGui::Checkbox("Night vision", &g_bNightVision);
             ImGui::SameLine();
+            ImGui::Checkbox("Low vision", &g_bLowIntensity);
+            // ------------
             if (ImGui::Button(" PAUSE "))
             {
                 g_bPause = !g_bPause;
@@ -2011,17 +2240,32 @@ void RenderImGui()
                 SwitchToFullScreen();
 
             /////////////////////////////////
-            if (ImGui::CollapsingHeader("SCENE"))
+            if (ImGui::CollapsingHeader("SCENE", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 if (g_Ocean) ImGui::Checkbox("Ocean", &g_Ocean->bVisible);
                 ImGui::SameLine();
                 if (g_Clouds) ImGui::Checkbox("Sky", &g_bSkyVisible);
                 ImGui::SameLine();
                 if (ImGui::Checkbox("Ship", &g_Ship->bVisible))
+                {
+                    static float prevYaw = g_Ship->Yaw;
+                    static vec3 prevPos = g_Ship->ship.Position;
                     g_bShipWake = g_Ship->bVisible;
+                    if (!g_Ship->bVisible)
+                    {
+                        prevYaw = g_Ship->Yaw;
+                        prevPos = g_Ship->ship.Position;
+                    }
+                    else
+                    {
+                        g_Ship->Yaw = prevYaw;
+                        g_Ship->ship.Position = prevPos;
+                        g_Ship->ResetVelocities();
+                    }
+                }
                 ImGui::SameLine();
-                ImGui::Checkbox("Sound", &g_Ship->bSound);
-
+                ImGui::Checkbox("Sound##1", &g_SoundMgr->bSound);
+                // ------------
                 if (g_vTerrains.size()) ImGui::Checkbox("Terrain", &g_vTerrains[0].model->bVisible);
                 ImGui::SameLine();
                 ImGui::Checkbox("Markup", &g_Markup->bVisible);
@@ -2031,19 +2275,17 @@ void RenderImGui()
                     ImGui::SameLine();
                     ImGui::Checkbox("Axis", &g_Axe->bVisible);
                 }
-
-                if (g_MobileWall) {
-                    ImGui::Checkbox("Mobile", &g_MobileWall->bVisible);
-                }
+                // ------------
                 if (g_FloatingBall) {
-                    ImGui::SameLine();
                     ImGui::Checkbox("Balls", &g_FloatingBall->bVisible);
                 }
                 ImGui::SameLine();
                 ImGui::Checkbox("Wind Arrow", &g_ArrowWind->bVisible);
-
+                ImGui::SameLine();
                 ImGui::Checkbox("Seagull", &g_bSoundSeagull);
-
+                // ------------
+                ImGui::Checkbox("Wireframe##1", &g_bWireframe);
+                ImGui::SameLine();
                 static bool isPhysics = false;
                 if (ImGui::Button(isPhysics ? "FULL###ModeButton" : "PHYSICS###ModeButton"))
                 {
@@ -2073,15 +2315,6 @@ void RenderImGui()
                         g_bGridVisible = false;
                     }
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("MEASURE"))
-                    g_bShowSphereMeasure = !g_bShowSphereMeasure;
-                ImGui::SameLine();
-                if (ImGui::Button("TERRAIN"))
-                    g_bShowTerrainWindow = !g_bShowTerrainWindow;
-                ImGui::SameLine();
-                if (ImGui::Button("AUTOPILOT"))
-                    g_bShowAutopilotWindow = !g_bShowAutopilotWindow;
             }
 
             /////////////////////////////////
@@ -2113,11 +2346,8 @@ void RenderImGui()
             {
                 if (g_Ocean)
                 {
-                    // Choppiness
                     ImGui::SliderFloat("Lambda", &g_Ocean->Lambda, 0.0f, -2.0f, "%0.2f");
-                    // Persistence of foam in seconds
-                    if (ImGui::SliderFloat("Foam", &g_Ocean->PersistenceSec, 0.0f, 30.0f, "%0.0f s")) g_Ocean->EvaluatePersistence(g_Ocean->PersistenceSec);
-                    // Transparency
+                    if (ImGui::SliderFloat("Foam", &g_Ocean->PersistenceSec, 0.0f, 5.0f, "%0.1f s")) g_Ocean->EvaluatePersistence(g_Ocean->PersistenceSec);
                     ImGui::SliderFloat("Transparency", &g_Ocean->Transparency, 0.0f, 1.0f, "%0.2f");
                     // Colors
                     if (ImGui::SliderInt("# Color", &g_Ocean->iOceanColor, 0, g_Ocean->vOceanColors.size() - 1)) g_Ocean->OceanColor = ConvertToFloat(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
@@ -2150,7 +2380,7 @@ void RenderImGui()
                         lastUpdateTime = 0.0;
                     ImGui::SameLine();
                     ImGui::Checkbox("Ocean cut", &g_bShowOceanCut);
-                    // Wireframe & patches
+                    // ------------
                     ImGui::Checkbox("Wireframe", &g_bOceanWireframe);
                     ImGui::SameLine();
                     ImGui::Checkbox("Patches", &g_Ocean->bShowPatch);
@@ -2171,20 +2401,18 @@ void RenderImGui()
                 ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));      // Even brighter background when active
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));               // White text
 
-                static float hour = g_Sky->GetHourFromNow();
-                float storeHour = hour;
+                static sHM hm = g_Sky->GetNow();
+                sHM storeHM = hm;
+                float hour = hm.hour + hm.minute / 60.0f;
                 if (ImGui::SliderFloat("Time", &hour, 0.0f, 24.0f, "", ImGuiSliderFlags_None))
                 {
-                    if (hour != storeHour)
-                    {
-                        g_Sky->SetSunAngles(g_InitialPosition, hour);
-                        g_Sky->SetPositionFromDistance();                                       // Computation of vec3 from distance, theta and phi
-                    }
+                    hm.hour = int(hour);
+                    hm.minute = fract(hour) * 60.0f + 0.5f;
+                    if (hm.hour != storeHM.hour || hm.minute != storeHM.minute)
+                        g_Sky->SetTime(hm.hour, hm.minute);
                 }
-                int h = (int)hour;
-                int m = (int)((hour - h) * 60 + 0.5f);
                 char buf[16];
-                snprintf(buf, 16, "%02d:%02d", h, m);
+                snprintf(buf, 16, "%02d:%02d", hm.hour, hm.minute);
                 ImGui::SameLine();
                 ImGui::Text("%s", buf);
 
@@ -2192,9 +2420,9 @@ void RenderImGui()
 
                 if (ImGui::Button(" NOW "))
                 {
-                    g_Sky->SetSunAngles(g_InitialPosition);
-                    g_Sky->SetPositionFromDistance();                                           // Computation of vec3 from distance, theta and phi
-                    hour = g_Sky->GetHourFromNow();
+                    g_Sky->SetNow();
+                    sHM hm1 = g_Sky->GetNow();
+                    hour = hm1.hour + hm1.minute / 60.0f;
                 }
             }
             /////////////////////////////////
@@ -2230,6 +2458,19 @@ void RenderImGui()
                 ImGui::ColorEdit3("Cloud top", (float*)&g_Clouds->CloudColorTop[0], 0);
                 ImGui::ColorEdit3("Cloud bottom", (float*)&g_Clouds->CloudColorBottom[0], 0);
                 ImGui::Checkbox("Godrays", &g_Clouds->bEnableGodRays);
+            }
+           
+            /////////////////////////////////
+            if (ImGui::CollapsingHeader("RAIN"))
+            {
+                if (ImGui::Checkbox("Droplets", &g_Sky->bRainDropsTrails))
+                    if (g_Sky->bRainDropsTrails)
+                        g_Sky->bRainBlurDrips= false;
+                ImGui::SameLine();
+                if (ImGui::Checkbox("Blur", &g_Sky->bRainBlurDrips))
+                    if (g_Sky->bRainBlurDrips)
+                        g_Sky->bRainDropsTrails = false;
+                g_Sky->bRain = g_Sky->bRainDropsTrails || g_Sky->bRainBlurDrips;
             }
         }
         ImGui::End();
@@ -2271,11 +2512,19 @@ void RenderImGui()
                 ImGui::EndCombo();
             }
             // ------------
-            ImGui::Checkbox("Smoke", &g_Ship->bSmoke);
+            ImGui::Checkbox("Model", &g_Ship->bModel);
+            ImGui::SameLine();
+            ImGui::Checkbox("Sound##2", &g_Ship->bSound);
+            ImGui::SameLine();
+            ImGui::Checkbox("Lights", &g_Ship->bLights);
+            // ------------
+            ImGui::Checkbox("Spray", &g_Ship->bSpray);
+            ImGui::SameLine();
+            ImGui::Checkbox("Waves", &g_Ship->bWaves);
             ImGui::SameLine();
             ImGui::Checkbox("Wake", &g_bShipWake);
             ImGui::SameLine();
-            ImGui::Checkbox("Lights", &g_Ship->bLights);
+            ImGui::Checkbox("Smoke", &g_Ship->bSmoke);
             // ------------
             int choix = (int)g_Ship->Rendering;
             int store = choix;
@@ -2290,13 +2539,14 @@ void RenderImGui()
                 if (choix == 0)
                 {
                     g_Ship->bOutline = true;
-                    g_Ship->mSmokeLeft->bVisible = false;
-                    if (g_Ship->ship.nChimney == 2)
-                        g_Ship->mSmokeRight->bVisible = false;
+                    g_Ship->bSmoke = false;
                     g_Ship->bLights = false;
                 }
                 if (choix == 2)
+                {
                     g_Ship->bOutline = false;
+                    g_Ship->bSmoke = true;
+                }
             }
             // ------------
             ImGui::Checkbox("Wireframe##2", &g_Ship->bWireframe);
@@ -2307,15 +2557,29 @@ void RenderImGui()
             ImGui::SameLine();
             ImGui::Checkbox("Forces", &g_Ship->bForces);
             ImGui::SameLine();
-            ImGui::Checkbox("Pressure", &g_Ship->bPressure);
+            if (ImGui::Checkbox("Pressure", &g_Ship->bPressure))
+            {
+                if (g_Ship->bPressure)
+                {
+                    g_Ship->Rendering = eRendering::TRIANGLES;
+                    g_Ship->bOutline = true;
+                    g_Ship->bSmoke = false;
+                    g_Ship->bLights = false;
+                }
+            }
             // ------------
-            ImGui::Checkbox("Dynamic Autopilot", &g_Ship->bDynamicAdjustment);
+            ImGui::Checkbox("Wake D", &g_Ship->bWakeVao);
             ImGui::SameLine();
-            ImGui::Checkbox("Wake debug", &g_Ship->bWakeVao);
-            // ------------
-            ImGui::Checkbox("Contours debug", &g_Ship->bContour);
+            ImGui::Checkbox("Contours D", &g_Ship->bContour);
             ImGui::SameLine();
-            ImGui::Checkbox("Bounding Box", &g_Ship->BBoxShape->bVisible);
+            ImGui::Checkbox("BBox", &g_Ship->BBoxShape->bVisible);
+
+            /////////////////////////////////
+            ImGui::SeparatorText("AUTOPILOT");
+            ImGui::Checkbox("Dynamic", &g_Ship->bDynamicAdjustment);
+            ImGui::SameLine();
+            if (ImGui::Button("SETTINGS"))
+                g_bShowAutopilotWindow = !g_bShowAutopilotWindow;
 
             /////////////////////////////////
             ImGui::SeparatorText("PHYSICS");
@@ -2427,42 +2691,6 @@ void RenderImGui()
         ImGui::End();
     }
     
-    if (g_bShowSphereMeasure)
-    {
-        ImGui::SetNextWindowSize(ImVec2(350, 300), ImGuiCond_FirstUseEver);
-        ImVec2 window_pos((g_WindowW - 350) / 2, g_WindowH - 300);
-        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
-        if (ImGui::Begin("Measurement", &g_bShowSphereMeasure))
-        {
-            ImGui::Checkbox("Measure", &g_SphereMeasure->bVisible);
-            vec3 posWorld = g_Ship->ship.Position + g_SphereMeasurePos;
-            ImGui::DragFloat("X", &posWorld.x);
-            ImGui::DragFloat("Y", &posWorld.y);
-            ImGui::DragFloat("Z", &posWorld.z);
-            g_SphereMeasurePos = posWorld - g_Ship->ship.Position;
-        }
-        ImGui::End();
-        ImGui::PopStyleColor();
-    }
-
-    if (g_bShowTerrainWindow)
-    {
-        ImGui::SetNextWindowSize(ImVec2(350, 300), ImGuiCond_FirstUseEver);
-        ImVec2 window_pos((g_WindowW - 350) / 2, g_WindowH - 300);
-        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
-        if (ImGui::Begin("Terrain", &g_bShowTerrainWindow))
-        {
-            ImGui::DragFloat("X", &g_vTerrains[0].pos.x, 100.0f, -20000, 20000);
-            ImGui::DragFloat("Y", &g_vTerrains[0].pos.y, 0.1f, -5.0f, 5.0f);
-            ImGui::DragFloat("Z", &g_vTerrains[0].pos.z, 100.0f, -20000, 20000);
-            ImGui::DragFloat("Scale Y", &g_vTerrains[0].scale.y, 0.1f, 0.5f, 2.0f);
-        }
-        ImGui::End();
-        ImGui::PopStyleColor();
-    }
-
     if (g_bShowAutopilotWindow)
     {
         ImGui::SetNextWindowSize(ImVec2(350, 300), ImGuiCond_FirstUseEver);
@@ -2471,14 +2699,14 @@ void RenderImGui()
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
         if (ImGui::Begin("Autopilot", &g_bShowAutopilotWindow))
         {
-                ImGui::SliderFloat("P", &g_Ship->ship.BaseP, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("I", &g_Ship->ship.BaseI, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("D", &g_Ship->ship.BaseD, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("MaxIntegral", &g_Ship->ship.MaxIntegral, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("SpeedFactor", &g_Ship->ship.SpeedFactor, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("MinSpeed", &g_Ship->ship.MinSpeed, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("LowSpeedBoost", &g_Ship->ship.LowSpeedBoost, 0.0f, 20.0f, "%.1f");
-                ImGui::SliderFloat("SeaSateFactor", &g_Ship->ship.SeaSateFactor, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("P", &g_Ship->ship.BaseP, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("I", &g_Ship->ship.BaseI, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("D", &g_Ship->ship.BaseD, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("MaxIntegral", &g_Ship->ship.MaxIntegral, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("SpeedFactor", &g_Ship->ship.SpeedFactor, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("MinSpeed", &g_Ship->ship.MinSpeed, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("LowSpeedBoost", &g_Ship->ship.LowSpeedBoost, 0.0f, 20.0f, "%.1f");
+            ImGui::SliderFloat("SeaSateFactor", &g_Ship->ship.SeaSateFactor, 0.0f, 20.0f, "%.1f");
         }
         ImGui::End();
         ImGui::PopStyleColor();
@@ -2571,9 +2799,6 @@ void RenderOceanCut(float x, float y, float w, float h, int xN)
 }
 void RenderTitle(float x, float y, float size, int align)
 {
-    static int fontId = nvgCreateFont(g_Nvg, "caveat", "Resources/Fonts/Caveat.ttf");
-    if (fontId == -1)  printf("Failed to load font 'Fonts/Caveat.ttf'\n");
-
     nvgBeginPath(g_Nvg);
     nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
     nvgFontSize(g_Nvg, size);
@@ -2589,6 +2814,48 @@ void RenderTitle(float x, float y, float size, int align)
     nvgText(g_Nvg, x, y, text, nullptr);
     nvgStroke(g_Nvg);
 }
+void RenderInfo()
+{
+    if (g_CaptureName.length() == 0)
+        return;
+
+    static double textStartTime = 0.0;
+    static bool textVisible = false;
+
+    if (!textVisible) {
+        textStartTime = glfwGetTime();
+        textVisible = true;
+    }
+
+    double now = glfwGetTime();
+
+    if (textVisible && (now - textStartTime) < 1.0)
+    {
+        nvgBeginPath(g_Nvg);
+        nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+        nvgFontSize(g_Nvg, 36);
+        nvgFontFace(g_Nvg, "caveat");
+        nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+        string s(g_CaptureName.begin(), g_CaptureName.end());
+        const char* text = s.c_str();
+
+        float x = g_WindowW / 2.0f;
+        float y = g_WindowH / 4.0f;
+
+        float bounds[4];
+        nvgTextBounds(g_Nvg, x, y, text, NULL, bounds);
+
+        nvgText(g_Nvg, x, y, text, nullptr);
+        nvgStroke(g_Nvg);
+    }
+    // Afer 1 seconde, stop visibilty
+    else if (textVisible && (now - textStartTime) >= 1.0)
+    {
+        textVisible = false;
+        g_CaptureName.clear();
+    }
+}
 void RenderTextures()
 {
     // Textures of displacement & gradients
@@ -2598,16 +2865,172 @@ void RenderTextures()
         g_QuadTexture->Render(g_Ocean->GetDisplacementID(), 5 + 0 * side, g_WindowH - side, g_Ocean->FFT_SIZE, g_Ocean->FFT_SIZE, QuadTexture::RGBA);
         g_QuadTexture->Render(g_Ocean->GetGradientsID(), 5 + 1 * side, g_WindowH - side, g_Ocean->FFT_SIZE, g_Ocean->FFT_SIZE, QuadTexture::RG);
         g_QuadTexture->Render(g_Ocean->GetFoamBufferID(), 5 + 2 * side, g_WindowH - side, g_Ocean->FFT_SIZE, g_Ocean->FFT_SIZE, QuadTexture::R);
+
+        if (g_Ship->GetTraceID())
+            g_QuadTexture->Render(g_Ship->GetTraceID(), 5, 5, 512, 512, QuadTexture::R);
     }
 
     if (g_bTextureWakeDisplay)
-        if (bVAO)
+        if (bTexWakeByVAO)
             g_QuadTexture->Render(TexWakeVao, 5, 5, TexWakeVaoSize, TexWakeVaoSize, QuadTexture::R);
         else
             g_QuadTexture->Render(TexWakeBuffer, 5, 5, TexWakeBufferSize, TexWakeBufferSize, QuadTexture::R);
 }
 
 // Dashboard 2D of the ship
+void RenderDebugRectangle(float x, float y, float w, float h)
+{
+    // Rectangle à dessiner
+    float dashLength = 6.0f;
+    float gapLength = 3.0f;
+    float strokeWidth = 1.0f;
+
+    // Couleur du trait : noir
+    NVGcolor color = nvgRGB(0, 0, 0);
+    nvgStrokeColor(g_Nvg, color);
+    nvgStrokeWidth(g_Nvg, strokeWidth);
+
+    // TOP
+    for (float dx = 0; dx < w; dx += dashLength + gapLength) {
+        float dashW = std::min(dashLength, w - dx);
+        nvgBeginPath(g_Nvg);
+        nvgMoveTo(g_Nvg, x + dx, y);
+        nvgLineTo(g_Nvg, x + dx + dashW, y);
+        nvgStroke(g_Nvg);
+    }
+    // BOTTOM
+    for (float dx = 0; dx < w; dx += dashLength + gapLength) {
+        float dashW = std::min(dashLength, w - dx);
+        nvgBeginPath(g_Nvg);
+        nvgMoveTo(g_Nvg, x + dx, y + h);
+        nvgLineTo(g_Nvg, x + dx + dashW, y + h);
+        nvgStroke(g_Nvg);
+    }
+    // LEFT
+    for (float dy = 0; dy < h; dy += dashLength + gapLength) {
+        float dashH = std::min(dashLength, h - dy);
+        nvgBeginPath(g_Nvg);
+        nvgMoveTo(g_Nvg, x, y + dy);
+        nvgLineTo(g_Nvg, x, y + dy + dashH);
+        nvgStroke(g_Nvg);
+    }
+    // RIGHT
+    for (float dy = 0; dy < h; dy += dashLength + gapLength) {
+        float dashH = std::min(dashLength, h - dy);
+        nvgBeginPath(g_Nvg);
+        nvgMoveTo(g_Nvg, x + w, y + dy);
+        nvgLineTo(g_Nvg, x + w, y + dy + dashH);
+        nvgStroke(g_Nvg);
+    }
+}
+void RenderEnv(float x, float y)
+{
+    float w = 80.0f;
+    float h = 136.0f;
+    float buttonWidth = w * 0.9f;
+    float buttonHeight = h * 0.2f;
+    float gap = 5.0f;
+
+    // Rounded rectangle
+    nvgBeginPath(g_Nvg);
+    nvgRoundedRect(g_Nvg, x, y, w, h, 10);
+    nvgFillColor(g_Nvg, nvgRGBA(192, 192, 192, 255));
+    nvgFill(g_Nvg);
+    nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+    nvgStrokeWidth(g_Nvg, 2.0f);
+    nvgStroke(g_Nvg);
+
+    // Camera mode button
+    float currentY = y + 5;
+    nvgBeginPath(g_Nvg);
+    nvgRoundedRect(g_Nvg, x + (w - buttonWidth) / 2, currentY, buttonWidth, buttonHeight, 5);
+    NVGcolor color = nvgRGBA(1, 121, 158, 255);
+    switch (g_Camera.GetMode())
+    {
+    case eCameraMode::ORBITAL:  color = nvgRGBA(1, 121, 158, 255);    break;
+    case eCameraMode::FPS:      color = nvgRGBA(38, 172, 225, 255);    break;
+    case eCameraMode::IN_FIXED: color = nvgRGBA(252, 131, 40, 255);    break;
+    case eCameraMode::IN_FREE:  color = nvgRGBA(254, 206, 1, 255);    break;
+    case eCameraMode::OUT_FREE: color = nvgRGBA(139, 81, 157, 255);    break;
+    }
+    nvgFillColor(g_Nvg, color);
+    nvgFill(g_Nvg);
+    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+    nvgFontSize(g_Nvg, 18.0f);
+    nvgFontFace(g_Nvg, "arial");
+    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    std::string mode;
+    switch (g_Camera.GetMode())
+    {
+    case eCameraMode::ORBITAL:  mode = "orbital";    break;
+    case eCameraMode::FPS:      mode = "fps";        break;
+    case eCameraMode::IN_FIXED: mode = "in fix";     break;
+    case eCameraMode::IN_FREE:  mode = "in free";    break;
+    case eCameraMode::OUT_FREE: mode = "out free";   break;
+    }
+    nvgText(g_Nvg, x + w / 2, currentY + buttonHeight / 2, mode.c_str(), nullptr);
+
+    // Fps
+    float fpsFontSize = 10.0f;
+    nvgFillColor(g_Nvg, nvgRGBA(80, 80, 80, 255));
+    nvgFontSize(g_Nvg, fpsFontSize);
+    nvgFontFace(g_Nvg, "arial");
+    nvgTextAlign(g_Nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
+    char fpsTxt[16];
+    snprintf(fpsTxt, sizeof(fpsTxt), "%d ips", g_Fps);
+    float fpsPad = 6.0f;
+    nvgText(g_Nvg, x + w - fpsPad, currentY + buttonHeight + 2.0f, fpsTxt, nullptr);
+
+    currentY += buttonHeight + gap + fpsFontSize + 1.0f;
+    
+    // Time
+    sHM hm = g_Sky->GetTime();
+    char buffer[12];
+    snprintf(buffer, sizeof(buffer), "%02d:%02d", hm.hour, hm.minute);
+    nvgFillColor(g_Nvg, nvgRGBA(32, 32, 32, 255));
+    nvgFontSize(g_Nvg, 22.0f);
+    nvgFontFace(g_Nvg, "arial");
+    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(g_Nvg, x + w / 2, currentY + buttonHeight / 2, buffer, nullptr);
+
+    g_CtrlTimeHour = vec4(x + 10, currentY, 30, 22);
+    g_CtrlTimeMinute = vec4(x + 40, currentY, 30, 22);
+
+    float nowButtonHeight = buttonHeight * 0.75f;
+    currentY += buttonHeight + gap - 3;
+
+    // Now button
+    nvgBeginPath(g_Nvg);
+    nvgRoundedRect(g_Nvg, x + (w - buttonWidth * 0.7f) / 2, currentY, buttonWidth * 0.7f, nowButtonHeight, 5);
+    nvgFillColor(g_Nvg, nvgRGBA(150, 150, 150, 255));
+    nvgFill(g_Nvg);
+    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+    nvgFontSize(g_Nvg, 12.0f);
+    nvgText(g_Nvg, x + w / 2, currentY + nowButtonHeight / 2, "NOW", nullptr);
+    g_CtrlNow = vec4(x + (w - buttonWidth * 0.7f) / 2, currentY, buttonWidth * 0.7f, nowButtonHeight);
+        
+    currentY += nowButtonHeight + gap + 3;
+
+    // Wind text
+    char windText[32];
+    snprintf(windText, sizeof(windText), "%d kn", int(g_WindSpeedKN));
+    nvgFillColor(g_Nvg, nvgRGBA(255, 0, 0, 255));
+    nvgFontSize(g_Nvg, 22.0f);
+    nvgFontFace(g_Nvg, "arial");
+    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(g_Nvg, x + w / 2, currentY + 12, windText, nullptr);
+
+    g_CtrlWind = vec4(x + 20, currentY, w - 20, 40);
+
+    // Night overlay
+    if (g_Sky->SunPosition.y < 0.0f)
+    {
+        nvgBeginPath(g_Nvg);
+        nvgRoundedRect(g_Nvg, x, y, w, h, 10);
+        nvgFillColor(g_Nvg, nvgRGBA(0, 0, 0, 128));
+        nvgFill(g_Nvg);
+    }
+}
 void RenderControlFrame(float x, float y, float w, float h)
 {
     // Draw the rectangle
@@ -3203,7 +3626,15 @@ void RenderPitchRoll(float x, float y, float w, float h)
     // Calculate the position of the circle based on the pitch
     float centreY = y + h / 2 - 2.0f * g_Ship->Pitch * h / 2;
     float rayon = w / 10;
-
+    // Calculate the top and bottom limits so that the circle remains within the rectangle
+    float minCentreY = y + rayon;
+    float maxCentreY = y + h - rayon;
+    // Clamp to keep center Y inside the frame
+    if (centreY < minCentreY)
+        centreY = minCentreY;
+    else if (centreY > maxCentreY)
+        centreY = maxCentreY;
+    
     // Draw the small, non-filled circle (very light gray)
     nvgBeginPath(g_Nvg);
     nvgCircle(g_Nvg, x + w / 2, centreY, rayon);
@@ -3475,7 +3906,7 @@ void RenderAutopilot(float x, float y)
 void RenderDashboard()
 {
     // Ship controls interface
-    if (g_Ship && g_Ship->bVisible && !g_bZoomCamera)
+    if (g_Ship && g_Ship->bVisible && !g_bBinoculars)
     {
         int widthAutopilot = 80;
         int widthSeparation = 5;
@@ -3483,9 +3914,11 @@ void RenderDashboard()
         if(g_Ship->ship.HasBowThruster)
         {
             int widthControlFrame = 415;
-            int startX = g_WindowW_2 - (widthControlFrame + widthSeparation + widthAutopilot) / 2;
-            RenderControlFrame(startX, 2, widthControlFrame, 136);
-            int x = startX + 70;
+            int startX = g_WindowW_2 - (widthControlFrame + 2 * widthSeparation + 2 * widthAutopilot) / 2;
+            RenderEnv(startX, 2);
+            int xFrame = startX + widthAutopilot + widthSeparation;
+            RenderControlFrame(xFrame, 2, widthControlFrame, 136);
+            int x = xFrame + 70;
             RenderCompass(x, 70, 58);
             x += 80;
             RenderBowThruster(x, 45, 50, 30);
@@ -3496,15 +3929,17 @@ void RenderDashboard()
             x += 150;
             RenderPitchRoll(x, 20, 80, 80);
             RenderRoT(x, 105, 80, 25);
-            RenderControlFrameNight(startX, 2, widthControlFrame, 136);
-            RenderAutopilot(startX + widthControlFrame + widthSeparation, 2);
+            RenderControlFrameNight(xFrame, 2, widthControlFrame, 136);
+            RenderAutopilot(xFrame + widthControlFrame + widthSeparation, 2);
         }
         else
         {
             int widthControlFrame = 415 - 35;
-            int startX = g_WindowW_2 - (widthControlFrame + widthSeparation + widthAutopilot) / 2;
-            RenderControlFrame(startX, 2, widthControlFrame, 136);
-            int x = startX + 70;
+            int startX = g_WindowW_2 - (widthControlFrame + 2 * widthSeparation + 2 * widthAutopilot) / 2;
+            RenderEnv(startX, 2);
+            int xFrame = startX + widthAutopilot + widthSeparation;
+            RenderControlFrame(xFrame, 2, widthControlFrame, 136);
+            int x = xFrame + 70;
             RenderCompass(x, 70, 58);
             x += 110;
             RenderThrottle(x, 10, 30, 100);
@@ -3513,8 +3948,8 @@ void RenderDashboard()
             x += 150;
             RenderPitchRoll(x, 20, 80, 80);
             RenderRoT(x, 105, 80, 25);
-            RenderControlFrameNight(startX, 2, widthControlFrame, 136);
-            RenderAutopilot(startX + widthControlFrame + widthSeparation, 2);
+            RenderControlFrameNight(xFrame, 2, widthControlFrame, 136);
+            RenderAutopilot(xFrame + widthControlFrame + widthSeparation, 2);
         }
     }
 }
@@ -3526,16 +3961,17 @@ void Render()
     static float firstTime = g_Timer.getTime();
     static int PrevNoShip;      // to detect a change of vessel
     static int PrevNoPosition;  // to detect a change of position
-
+    static bool PrevVisiblity;
     // Detects if the current ship has changed (different pointer)
-    if (g_NoShip != PrevNoShip || g_NoPosition != PrevNoPosition)
+    if (g_NoShip != PrevNoShip || g_NoPosition != PrevNoPosition || g_Ship->bVisible != PrevVisiblity)
     {
         // New ship: we reset the physical tempo
         bInit = false;
         firstTime = g_Timer.getTime();
-        g_Ship->bMotion = false;       // disable physics during latency
-        PrevNoShip = g_NoShip;          // memorizes the current ship
-        PrevNoPosition = g_NoPosition;  // memorizes the current position
+        g_Ship->bMotion = false;            // disable physics during latency
+        PrevNoShip = g_NoShip;              // memorizes the current ship
+        PrevNoPosition = g_NoPosition;      // memorizes the current position
+        PrevVisiblity = g_Ship->bVisible;   // memorizes the current visibility
     }
 
     // Physics cutoff for 1 second after any change
@@ -3546,6 +3982,8 @@ void Render()
     }
 
     RenderImGui();
+
+    bool bAboveWater = g_Camera.GetPosition().y > 0.0f;
 
     // Rendering the scene inverted for the reflection texture
     {
@@ -3558,7 +3996,7 @@ void Render()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (g_Ship)
-            g_Ship->Render(g_Camera, g_Sky.get(), true);    // true = reflection
+            g_Ship->RenderReflexion(g_Camera, g_Sky.get());
 
         // Revert to default
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -3604,9 +4042,7 @@ void Render()
         RenderTerrains(0);
         g_Markup->Render(g_Camera, g_Ocean.get(), g_Sky.get());
         RenderAxis();
-        RenderMobile(5.0f);
         RenderBalls();
-        RenderMeasure();
         RenderCentralGridColored();
         RenderExternalGridsAround();
         RenderArrowWind();
@@ -3625,8 +4061,12 @@ void Render()
         }
 
         // Particles
-        g_Ship->RenderSmoke(g_Camera);
-        g_Ship->RenderWakeVao(g_Camera);
+        if (bAboveWater)
+        {
+            g_Ship->RenderSmoke(g_Camera, g_Sky.get());
+            g_Ship->RenderSpray(g_Camera, g_Sky.get());
+            g_Ship->RenderWakeVao(g_Camera);
+        }
 
         // Polyline
         g_Ship->RenderContour(g_Camera);
@@ -3654,33 +4094,62 @@ void Render()
         glBlitFramebuffer(0, 0, g_WindowW, g_WindowH, 0, 0, g_WindowW, g_WindowH, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
         // Do the 1st post processing
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if ((g_Sky->bRain || g_bBinoculars) && g_Camera.GetPosition().y > 0.0f)
+            glBindFramebuffer(GL_FRAMEBUFFER, FBO_POST);
+        else
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, g_WindowW, g_WindowH);
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         g_ShaderPostProcessing->use();  // Shaders/post_processing.vert Shaders/post_processing.frag
-        g_ShaderPostProcessing->setSampler2D("texColor", TexSceneColor, 0);
+        g_ShaderPostProcessing->setSampler2D("texColor", TexSceneColor, 0);     // Get the previous color texture (from the scene)
         g_ShaderPostProcessing->setSampler2D("texDepth", TexSceneDepth, 1);
-
         g_ShaderPostProcessing->setFloat("exposure", g_Sky->Exposure);
         g_ShaderPostProcessing->setFloat("near", 0.1f);
         g_ShaderPostProcessing->setFloat("far", 30000.f);
         g_ShaderPostProcessing->setFloat("horizonHeight", g_Camera.GetHorizonViewportY());
         g_ShaderPostProcessing->setVec3("eyePos", g_Camera.GetPosition());          // For underwater effect
-        
         g_ShaderPostProcessing->setVec3("oceanColor", g_Ocean->OceanColor);
         g_ShaderPostProcessing->setVec3("fogColor", g_Sky->FogColor);
-        
         g_ShaderPostProcessing->setFloat("mistDensity", g_Sky->MistDensity);
         g_ShaderPostProcessing->setFloat("fogDensity", g_Sky->FogDensity);
-        
         g_ShaderPostProcessing->setFloat("uTime", g_Timer.getTime());               // For underwater particles
         g_ShaderPostProcessing->setVec2("screenSize", vec2(g_WindowW, g_WindowH));
-
-        g_ShaderPostProcessing->setBool("bBinoculars", g_bZoomCamera);
-
+        g_ShaderPostProcessing->setBool("bLowIntensity", g_bLowIntensity && bAboveWater);
+        g_ShaderPostProcessing->setBool("bNightVision", g_bNightVision && bAboveWater);
         g_ScreenQuadPost->Render();
+
+        if ((g_Sky->bRain || g_bBinoculars) && bAboveWater)
+        {
+            // 2 passes: 1 for the rain And or the binoculars, 2 for the fxaa
+            
+            // Rendering to a FBO for the 1st pass
+            glBindFramebuffer(GL_FRAMEBUFFER, FBO_RAIN);
+            glViewport(0, 0, g_WindowW, g_WindowH);
+            glClearColor(0.0, 0.0, 0.0, 0.0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            g_ShaderRain->use();    // Shaders/rain.vert Shaders/rain.frag
+            g_ShaderRain->setSampler2D("texColor", TexPostColor, 0);    // Get the previous color texture (post processing)
+            g_ShaderRain->setFloat("uTime", g_Timer.getTime());           
+            g_ShaderRain->setVec2("screenSize", vec2(g_WindowW, g_WindowH));
+            g_ShaderRain->setBool("bBinoculars", g_bBinoculars);
+            g_ShaderRain->setBool("bRainDropsTrails", g_Sky->bRainDropsTrails);
+            g_ShaderRain->setBool("bRainBlurDrips", g_Sky->bRainBlurDrips);
+            g_ScreenQuadPost->Render();
+            
+            // Rendering to the screen for the 2nd pass (FXAA)
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glViewport(0, 0, g_WindowW, g_WindowH);
+            glClearColor(0.0, 0.0, 0.0, 0.0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            g_ShaderFXAA->use();    // Shaders/fxaa.vert Shaders/fxaa.frag
+            g_ShaderFXAA->setSampler2D("texInput", TexRainColor, 0);    // Get the previous color texture (rain)
+            g_ShaderFXAA->setVec2("invScreenSize", vec2(1.0f / g_WindowW, 1.0f / g_WindowH));
+            g_ScreenQuadPost->Render();
+        }
     }
 
     // Revert to default
@@ -3690,13 +4159,14 @@ void Render()
     // Nanovg
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     nvgBeginFrame(g_Nvg, g_WindowW, g_WindowH, g_DevicePixelRatio);
-    
-    RenderStatusbar();
-    RenderOceanCut(g_WindowW_2, 200, 800, 50, 0);
-    //RenderTitle(g_WindowW_2, g_WindowH - 200, 72, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    RenderTitle(g_WindowW - 70, g_WindowH - 25, 36.0f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-    RenderDashboard();
-    
+    {
+        RenderStatusbar();
+        RenderOceanCut(g_WindowW_2, 200, 800, 50, 0);
+        //RenderTitle(g_WindowW_2, g_WindowH - 200, 72, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        RenderTitle(g_WindowW - 70, g_WindowH - 25, 36.0f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        RenderInfo();
+        RenderDashboard();
+    }
     nvgEndFrame(g_Nvg);
 
     // ImGui

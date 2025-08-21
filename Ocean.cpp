@@ -11,9 +11,6 @@
 #include <numeric>
 #include <random>
 
-// freeimage
-//#include <freeimage/FreeImage.h>
-
 // For spectrum study
 bool bStats = true;
 static float Min = FLT_MAX;
@@ -46,8 +43,8 @@ extern GLuint   TexWakeBuffer;                      // Buffer of wake
 extern int      TexWakeBufferSize;
 extern GLuint   TexWakeVao;                         // Texture of wake made by a projection of vao
 extern int      TexWakeVaoSize;
-extern bool     bVAO;
-
+extern bool     bTexWakeByVAO;
+extern 
 int SPECTRUM = 0;
 struct InstanceData 
 {
@@ -66,23 +63,37 @@ Ocean::Ocean(vec2 wind, Sky* sky)
 }
 Ocean::~Ocean()
 {
-    //glDeleteTextures(1, &mTexInitialSpectrum);
-    //glDeleteTextures(1, &mTextFrequencies);
-    //glDeleteTextures(2, &mTexUpdatedSpectra[0]);
-    //glDeleteTextures(1, &mTexTempData);	
-    //glDeleteTextures(1, &mTexDisplacements);	
-    //glDeleteTextures(1, &mTexGradients);	
-    //glDeleteTextures(1, &mTexFoamAcc1);
-    //glDeleteTextures(1, &mTexFoamAcc2);	
-    //glDeleteTextures(1, &mTexFoamBuffer);
-    //glDeleteTextures(1, &TexWakeBuffer);
+    if (mTexInitialSpectrum)
+        glDeleteTextures(1, &mTexInitialSpectrum);
+    if (mTextFrequencies)
+        glDeleteTextures(1, &mTextFrequencies);
+    if (mTexUpdatedSpectra[0] && mTexUpdatedSpectra[1])
+        glDeleteTextures(2, &mTexUpdatedSpectra[0]);
+    if (mTexTempData)
+        glDeleteTextures(1, &mTexTempData);	
+    if (mTexDisplacements)
+        glDeleteTextures(1, &mTexDisplacements);	
+    if (mTexGradients)
+        glDeleteTextures(1, &mTexGradients);	
+    if (mTexFoamAcc1)
+        glDeleteTextures(1, &mTexFoamAcc1);
+    if (mTexFoamAcc2)
+        glDeleteTextures(1, &mTexFoamAcc2);
+    if (mTexFoamBuffer)
+        glDeleteTextures(1, &mTexFoamBuffer);
+    if (mTexFoamBuffer)
+        glDeleteTextures(1, &TexWakeBuffer);
 
-    //glDeleteBuffers(1, &mVbo);
-    //glDeleteVertexArrays(1, &mVao);
-    //glDeleteBuffers(1, &mIbo);
+    if (mVbo)
+        glDeleteBuffers(1, &mVbo);
+    if (mVao)
+        glDeleteVertexArrays(1, &mVao);
+    if (mIbo)
+        glDeleteBuffers(1, &mIbo);
 
-    //for (GLuint vao : mvVAOs)
-    //    glDeleteVertexArrays(1, &vao);
+    for (GLuint vao : mvVAOs)
+        if (vao)
+            glDeleteVertexArrays(1, &vao);
 }
 
 // Init
@@ -166,12 +177,12 @@ void Ocean::Init()
 
     // Create the texture of the foam
     mTexFoamDesign = make_unique<Texture>();
-    mTexFoamDesign->CreateFromDDSFile("Resources/Ocean/foam.dds");
+    mTexFoamDesign->CreateFromFile("Resources/Ocean/foam.png");
     glBindTexture(GL_TEXTURE_2D, mTexFoamDesign->id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy);
-
+   
     mTexFoamBubbles = make_unique<Texture>();
-    mTexFoamBubbles->CreateFromDDSFile("Resources/Ocean/foam_bubbles.dds");
+    mTexFoamBubbles->CreateFromFile("Resources/Ocean/foam_bubbles.png");
     glBindTexture(GL_TEXTURE_2D, mTexFoamBubbles->id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy);
 
@@ -186,6 +197,9 @@ void Ocean::Init()
     mTexWaterDuDv->CreateFromFile("Resources/Ocean/waterDUDV.png");
     glBindTexture(GL_TEXTURE_2D, mTexWaterDuDv->id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy);
+
+    mTexKelvinArray = InitTexture2DArray();
+    glBindTextureUnit(0, mTexKelvinArray);
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -251,16 +265,17 @@ void Ocean::Init()
     mShaderOceanWake->Load("Resources/Ocean/ocean_wake.vert", "Resources/Ocean/ocean_wake.frag");
     mShaderOceanWake->use();
     mShaderOceanWake->setInt("displacement", 0);    // dx, dy, dz
-    mShaderOceanWake->setInt("envmap", 1);          // cubemap texture
-    mShaderOceanWake->setInt("gradients", 2);       // jacobians for the foam
-    mShaderOceanWake->setInt("foamBuffer", 3);      // buffer accumulation of the foam which progressively disappear
-    mShaderOceanWake->setInt("foamDesign", 4);      // texture of the foam
-    mShaderOceanWake->setInt("foamBubbles", 5);     // texture to add bubbles
-    mShaderOceanWake->setInt("foamTexture", 6);     // texture of the foam
-    mShaderOceanWake->setInt("contourShip", 7);     // texture of foam around the ship
-    mShaderOceanWake->setInt("reflectionTexture", 8);// reflection texture
-    mShaderOceanWake->setInt("waterDUDV", 9);       // texture to add vibrations of the water for the reflection
-    mShaderOceanWake->setInt("wakeBuffer", 10);     // wake of the ship
+    mShaderOceanWake->setInt("kelvinArray", 1);
+    mShaderOceanWake->setInt("envmap", 2);          // cubemap texture
+    mShaderOceanWake->setInt("gradients", 3);       // jacobians for the foam
+    mShaderOceanWake->setInt("foamBuffer", 4);      // buffer accumulation of the foam which progressively disappear
+    mShaderOceanWake->setInt("foamDesign", 5);      // texture of the foam
+    mShaderOceanWake->setInt("foamBubbles", 6);     // texture to add bubbles
+    mShaderOceanWake->setInt("foamTexture", 7);     // texture of the foam
+    mShaderOceanWake->setInt("contourShip", 8);     // texture of foam around the ship
+    mShaderOceanWake->setInt("reflectionTexture", 9);// reflection texture
+    mShaderOceanWake->setInt("waterDUDV", 10);       // texture to add vibrations of the water for the reflection
+    mShaderOceanWake->setInt("wakeBuffer", 11);     // wake of the ship
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy / 2);
 
@@ -322,6 +337,62 @@ void Ocean::InitFrequencies()
 
     delete[] wdata;
     delete[] h0data;
+}
+GLuint Ocean::InitTexture2DArray()
+{
+    const int texCount = 100;
+    const int width = 1024;
+    const int height = 1024;
+
+    stbi_set_flip_vertically_on_load(true);
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, textureID);
+
+    // Allouer espace pour la texture 2D array
+    glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_R8, width, height, texCount);
+
+    for (int i = 0; i < texCount; i++) 
+    {
+        string filename;
+        if (i < 9)
+            filename = "Resources/Kelvin/Kelvin-1024_Fr-00" + std::to_string(i + 1) + ".png";
+        else if (i < 99)
+            filename = "Resources/Kelvin/Kelvin-1024_Fr-0" + std::to_string(i + 1) + ".png";
+        else
+            filename = "Resources/Kelvin/Kelvin-1024_Fr-" + std::to_string(i + 1) + ".png";
+
+        int w, h, nrChannels;
+        unsigned char* data = stbi_load(filename.c_str(), &w, &h, &nrChannels, 1); // Charger en un canal (GL_RED)
+        if (!data) {
+            std::cerr << "Error loadind texture " << filename << std::endl;
+            continue;
+        }
+
+        if (w != width || h != height) {
+            std::cerr << "Incorrect size in " << filename << std::endl;
+            stbi_image_free(data);
+            continue;
+        }
+
+        // Copier les données dans la couche i de la 2D texture array
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, width, height, 1, GL_RED, GL_UNSIGNED_BYTE, data);
+
+        stbi_image_free(data);
+    }
+
+    // Paramètres de filtrage / wrapping
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+   
+    stbi_set_flip_vertically_on_load(false);
+
+    return textureID;
 }
 void Ocean::GetWind(vec2 wind) 
 { 
@@ -446,10 +517,10 @@ void Ocean::CreateLODMeshes()
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(GridVertex), vertices.data(), GL_STATIC_DRAW);
 
-        glEnableVertexAttribArray(0);   // layout (location = 0) in vec3 my_Position;
+        glEnableVertexAttribArray(0);   // layout (location = 0) in vec3 aPosition;
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GridVertex), (void*)0);
         
-        glEnableVertexAttribArray(1);   // layout (location = 1) in vec2 my_TexCoords;
+        glEnableVertexAttribArray(1);   // layout (location = 1) in vec2 aTexCoords;
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GridVertex), (void*)offsetof(GridVertex, texCoord));
 
         glGenBuffers(1, &ibo);
@@ -819,10 +890,10 @@ void Ocean::Update(float t)
     mTexFoamBuffer = mTexFoamAcc1;
 
     mShaderGradients->use();        // Ocean/creategradients.comp
-    glBindImageTexture(0, mTexDisplacements, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA32F);      // displacement
+    glBindImageTexture(0, mTexDisplacements, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA32F);      // displacements
     glBindImageTexture(1, mTexGradients, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);         // gradients
-    glBindImageTexture(2, mTexFoamAcc1, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R32F);              // accumulation of foam (read only)
-    glBindImageTexture(3, mTexFoamAcc2, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R32F);             // accumulation of foam (write only)
+    glBindImageTexture(2, mTexFoamAcc1, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R32F);              // accumulation of foam (alternate read/write)
+    glBindImageTexture(3, mTexFoamAcc2, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_R32F);             // accumulation of foam (alternate read/write)
 
     static float tOld = t;
     mShaderGradients->setFloat("t", t - tOld);
@@ -1430,8 +1501,9 @@ bool IsPatchInFrustum(const mat4& viewProjMatrix, const vec3& center, float radi
     vec3 absClipPos = glm::abs(glm::vec3(clipSpacePos));
     return (absClipPos.x <= w + margin) && (absClipPos.y <= w + margin) && (absClipPos.z <= w + margin);
 }
-void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation)
+void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bWaves, float LWL, float kelvinScale, float shipVelocity, float centerFore)
 {
+    int sumPatches = 0;
 #pragma region Instances
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -1453,7 +1525,6 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOcean->setVec3("absorbanceColor", mSky->AbsorbanceColor);
     mShaderOcean->setFloat("absorbanceCoeff", mSky->AbsorbanceCoeff);
     mShaderOcean->setVec3("sunDir", glm::normalize(mSky->SunPosition));
-    mShaderOcean->setBool("bAttenuationFresnel", bAttenuationFresnel);
     mShaderOcean->setBool("bShowPatch", bShowPatch);
 
     // Bind textures
@@ -1480,7 +1551,10 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
 
     // Search for patches with wake (excluding instancing)
     vector<pair<int, int>> vPatches;
-    GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeBufferSize, TexWakeBufferSize, ShipRotation, vPatches);
+    if (bTexWakeByVAO)
+        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeVaoSize, TexWakeVaoSize, ShipRotation, vPatches);
+    else
+        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeBufferSize, TexWakeBufferSize, ShipRotation, vPatches);
 
     // Definition of the InstanceData structure
     struct InstanceData {
@@ -1499,7 +1573,7 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
 #ifdef _DEBUG
     int nGrids = 50;
 #else
-    int nGrids = 200;
+    int nGrids = NbPatches;
 #endif
 
     const float sphereRadius = PATCH_SIZE * 1.414f;
@@ -1542,7 +1616,6 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     // Create and use a single VBO instance for all LODs
     GLuint instanceVBO;
     glGenBuffers(1, &instanceVBO);
-
     for (int lodLevel = 0; lodLevel < 5; lodLevel++)
     {
         if (instanceData[lodLevel].empty())
@@ -1573,16 +1646,28 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
         mShaderOcean->use();
         glDrawElementsInstanced(GL_TRIANGLES, mvIndicesCounts[lodLevel], GL_UNSIGNED_INT, 0, instanceData[lodLevel].size());
     }
+    
+    for (int lodLevel = 0; lodLevel < 5; lodLevel++)
+        sumPatches += instanceData[lodLevel].size();
 
     glDeleteBuffers(1, &instanceVBO);
 #pragma endregion
 
 #pragma region Patches with wake
-
     mShaderOceanWake->use();
     mShaderOceanWake->setMat4("matViewProj", camera.GetProjection()* camera.GetView());
     mShaderOceanWake->setVec3("eyePos", camera.GetPosition());
     mShaderOceanWake->setVec3("oceanColor", OceanColor);
+    
+    mShaderOceanWake->setVec3("shipPosition", ShipPosition);
+    mShaderOceanWake->setBool("bWaves", bWaves);
+    mShaderOceanWake->setFloat("amplitude", 0.15f * shipVelocity);
+    mShaderOceanWake->setFloat("kelvinScale", kelvinScale);
+    mShaderOceanWake->setFloat("centerFore", centerFore);
+    int layer = int(100.0f * fabs(shipVelocity) / sqrt(9.81f * LWL)) + 20;   // Froude is (layer + 1) / 100
+    layer = glm::clamp(layer, 0, 99);
+    //cout << layer << endl;
+    mShaderOceanWake->setInt("texLayer", layer);
     mShaderOceanWake->setFloat("transparency", Transparency);
     mShaderOceanWake->setVec3("sunColor", mSky->SunDiffuse);
     mShaderOceanWake->setInt("bEnvmap", bEnvmap);
@@ -1594,12 +1679,11 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOceanWake->setVec2("shipPivot", vec2(ShipPosition.x, ShipPosition.z));
     mShaderOceanWake->setFloat("shipRotation", -ShipRotation);
     mShaderOceanWake->setVec2("shipSize", vec2(TexContourShipW, TexContourShipH));
-    if(bVAO)
+    if(bTexWakeByVAO)
         mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeVaoSize));
     else
         mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeBufferSize));
     mShaderOceanWake->setFloat("time", 0.001f * t);
-    mShaderOceanWake->setBool("bAttenuationFresnel", bAttenuationFresnel);
     mShaderOceanWake->setBool("bWake", g_bShipWake);
     mShaderOceanWake->setBool("bShowPatch", bShowPatch);
 
@@ -1607,34 +1691,37 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     glBindTexture(GL_TEXTURE_2D, mTexDisplacements);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, mTexKelvinArray);
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, mTexGradients);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
 
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, mTexFoamBuffer);
+    glBindTexture(GL_TEXTURE_2D, mTexGradients);
 
     glActiveTexture(GL_TEXTURE4);
-    glBindTexture(GL_TEXTURE_2D, mTexFoamDesign->id);
+    glBindTexture(GL_TEXTURE_2D, mTexFoamBuffer);
 
     glActiveTexture(GL_TEXTURE5);
-    glBindTexture(GL_TEXTURE_2D, mTexFoamBubbles->id);
+    glBindTexture(GL_TEXTURE_2D, mTexFoamDesign->id);
 
     glActiveTexture(GL_TEXTURE6);
-    glBindTexture(GL_TEXTURE_2D, mTexFoam->id);
+    glBindTexture(GL_TEXTURE_2D, mTexFoamBubbles->id);
 
     glActiveTexture(GL_TEXTURE7);
-    glBindTexture(GL_TEXTURE_2D, TexContourShip);
+    glBindTexture(GL_TEXTURE_2D, mTexFoam->id);
 
     glActiveTexture(GL_TEXTURE8);
-    glBindTexture(GL_TEXTURE_2D, TexReflectionColor);
+    glBindTexture(GL_TEXTURE_2D, TexContourShip);
 
     glActiveTexture(GL_TEXTURE9);
-    glBindTexture(GL_TEXTURE_2D, mTexWaterDuDv->id);
+    glBindTexture(GL_TEXTURE_2D, TexReflectionColor);
 
     glActiveTexture(GL_TEXTURE10);
-    if (bVAO)
+    glBindTexture(GL_TEXTURE_2D, mTexWaterDuDv->id);
+
+    glActiveTexture(GL_TEXTURE11);
+    if (bTexWakeByVAO)
         glBindTexture(GL_TEXTURE_2D, TexWakeVao);
     else
         glBindTexture(GL_TEXTURE_2D, TexWakeBuffer);
@@ -1648,6 +1735,10 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
         mShaderOceanWake->setMat4("matLocal", glm::translate(mat4(1.0f), center));
         glDrawElements(GL_TRIANGLES, mIndicesCount, GL_UNSIGNED_INT, 0);
     }
+    
+    sumPatches += vPatches.size();
+    //cout << sumPatches << endl;
+
     glActiveTexture(GL_TEXTURE0);
 #pragma endregion
 }

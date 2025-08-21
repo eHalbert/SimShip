@@ -47,6 +47,7 @@ public:
 
 	void		Init();
 	void		InitFrequencies();
+	GLuint		InitTexture2DArray();
 	void		GetWind(vec2 wind);
 	float		EvaluateLambda(vec2 wind);
 	void		EvaluatePersistence(float seconds);
@@ -79,7 +80,7 @@ public:
 
 	float	  * GetPixelsDisplacement() { return mPixelsDisplacement.get(); };
 
-	void		Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation);
+	void		Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bWaves, float LWL, float kelvinScale, float shipVelocity, float centerFore);
 
 	// Dimensions
 	const int			FFT_SIZE		= 512;				// Dimension of the FFT (1024 max)
@@ -90,13 +91,13 @@ public:
 	const int			LengthWave		= 60;				// Dimension of the wave number
 	
 	// Parameters
-	vec2				Wind			= { 0.0f, 1.0f };	// input of wind (no need to be normalized at this stage)
-	float				Amplitude		= 1.0f;				// amplitude of the waves
-	float				Lambda			= -1.0f;			// factor of choppiness (exagerate the displacements)
+	vec2				Wind			= { 0.0f, 1.0f };	// Input of wind (no need to be normalized at this stage)
+	float				Amplitude		= 1.0f;				// Amplitude of the waves
+	float				Lambda			= -1.0f;			// Factor of choppiness (exagerate the displacements)
 	
 	vec3				OceanColor;
-	int					iOceanColor = 6;
-	vector<vec3>		vOceanColors = {
+	int					iOceanColor		= 6;
+	vector<vec3>		vOceanColors	= {
 					vec3(122, 138,  92),		// Pornic
 					vec3( 69, 134, 111),		// North sea light
 					vec3( 37,  66,  57),		// North sea dark
@@ -111,17 +112,17 @@ public:
 					vec3( 21,  61, 111)			// Iroise
 	};
 
-	float				PersistenceSec	= 4.0f;
+	float				PersistenceSec	= 0.5f;
 	float				PersistenceFactor = 1.0f;
-	float				Transparency = 0.05f;
+	float				Transparency	= 0.05f;
 
 	vector<WaveData>	vWaveData;						// time, dx, dy, dz
 	bool				bNewData		= false;
 
 	bool				bVisible		= true;			// rendering of the ocean or not
 	bool				bEnvmap			= true;
-	bool				bAttenuationFresnel = true;
-	bool				bShowPatch = false;
+	bool				bShowPatch		= false;
+	int					NbPatches		= 200;
 
 private:
 	void GetAllJacobians();
@@ -147,15 +148,15 @@ private:
 	unique_ptr<Shader>		mShaderOceanWake;		// mShader of ocean rendering with wake texture applied
 
 	// Textures of storage (glTexStorage2D)
-	GLuint					mTexInitialSpectrum = 0;		// initial spectrum \tilde{h}_0
-	GLuint					mTextFrequencies = 0;			// frequency \omega_i per wave vector
-	GLuint					mTexUpdatedSpectra[2] = { 0 };	// updated spectra \tilde{h}(\mathbf{k},t) and \tilde{\mathbf{D}}(\mathbf{k},t) [reused for FT result]
-	GLuint					mTexTempData = 0;				// intermediate data for FFT
-	GLuint					mTexDisplacements = 0;			// displacements map
-	GLuint					mTexGradients = 0;				// normals & foldings map
-	GLuint					mTexFoamAcc1 = 0;				// accumulation buffer of the foam (swap due to readonly and writeonly)
-	GLuint					mTexFoamAcc2 = 0;				// accumulation buffer of the foam (swap due to readonly and writeonly)
-	GLuint					mTexFoamBuffer = 0;				// either accfoam1 or accfoam2 (the last writeonly which is read for rendering purpose) 
+	GLuint					mTexInitialSpectrum		= 0;		// initial spectrum \tilde{h}_0
+	GLuint					mTextFrequencies		= 0;		// frequency \omega_i per wave vector
+	GLuint					mTexUpdatedSpectra[2]	= { 0 };	// updated spectra \tilde{h}(\mathbf{k},t) and \tilde{\mathbf{D}}(\mathbf{k},t) [reused for FT result]
+	GLuint					mTexTempData			= 0;		// intermediate data for FFT
+	GLuint					mTexDisplacements		= 0;		// displacements map
+	GLuint					mTexGradients			= 0;		// normals & foldings map
+	GLuint					mTexFoamAcc1			= 0;		// accumulation buffer of the foam (swap due to readonly and writeonly)
+	GLuint					mTexFoamAcc2			= 0;		// accumulation buffer of the foam (swap due to readonly and writeonly)
+	GLuint					mTexFoamBuffer			= 0;		// either accfoam1 or accfoam2 (the last writeonly which is read for rendering purpose) 
 
 	// Textures of rendering
 	unique_ptr<Texture>		mTexEnvironment;		// environment texture (shaderSky)
@@ -163,21 +164,24 @@ private:
 	unique_ptr<Texture>		mTexFoamBubbles;		// foam bubbles
 	unique_ptr<Texture>		mTexFoam;				// texture of the wake
 	unique_ptr<Texture>		mTexWaterDuDv;			// texture to bring noise for the reflection of the ship on the water 
+	GLuint					mTexKelvinArray;
 
 	// Miscellaneous
-	float					mGravity = 9.81f;
-	GLuint					mVbo, mIbo, mVao;
-	int						mIndicesCount = 0;
-	unique_ptr<float[]>		mPixelsDisplacement = nullptr;
+	float					mGravity				= 9.81f;
+	GLuint					mVao					= 0;
+	GLuint					mVbo					= 0;
+	GLuint					mIbo					= 0;
+	int						mIndicesCount			= 0;
+	unique_ptr<float[]>		mPixelsDisplacement		= nullptr;
 
 	vector<vector<vec3>>	mvPatchVertices;
 	vector<GLuint>			mvVAOs;
-	vector<int>				mvMeshSizes = { 256, 128, 64, 32, 16 };	// LOD 0, 1, 2, 3, 4
+	vector<int>				mvMeshSizes				= { 256, 128, 64, 32, 16 };	// LOD 0, 1, 2, 3, 4
 	vector<int>				mvIndicesCounts;
 
-	vector<double>      a_Frequences;
-	vector<double>      a_DensiteSpectrale;
-	vector<double>      a_Directions;
+	vector<double>			a_Frequences;
+	vector<double>			a_DensiteSpectrale;
+	vector<double>			a_Directions;
 
 };
 

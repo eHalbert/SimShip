@@ -15,9 +15,9 @@
 
 #include "pugixml/pugixml.hpp"
 #ifdef _DEBUG
-#pragma comment(lib, "pugixml/Debug/x64/pugixml.lib")
+#pragma comment(lib, "pugixml/Debug/pugixml.lib")
 #else
-#pragma comment(lib, "pugixml/Release/x64/pugixml.lib")
+#pragma comment(lib, "pugixml/Release/pugixml.lib")
 #endif
 
 #include "Utility.h"

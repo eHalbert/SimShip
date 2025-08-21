@@ -97,6 +97,8 @@ void Texture::CreateFromFile(const char* path, bool flip_vertically)
     }
 
     stbi_image_free(data);
+    stbi_set_flip_vertically_on_load(false);
+
 }
 void Texture::CreateFromDDSFile(const char* path)
 {
