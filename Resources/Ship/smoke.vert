@@ -18,6 +18,7 @@ uniform float   lifeSpan;
 
 out vec4 ParticleColor;
 
+
 void main() 
 {
     Particle p = particles[gl_InstanceID];

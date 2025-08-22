@@ -2,8 +2,8 @@
 
 in vec2 FragUV;
 
-uniform sampler2D tex;
-uniform float texelHeight; // 1.0 / 1024.0
+uniform sampler2D   tex;
+uniform float       texelHeight; // 1.0 / 1024.0
 
 out vec4 FragColor;
 

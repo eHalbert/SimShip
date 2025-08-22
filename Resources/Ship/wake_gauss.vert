@@ -5,6 +5,7 @@ layout(location = 1) in vec2 inUV;
 
 out vec2 FragUV;
 
+
 void main() 
 {
     FragUV = inUV;
