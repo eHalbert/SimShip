@@ -16,7 +16,6 @@ void main()
 	ivec2 loc1	= ivec2(gl_GlobalInvocationID.xy);
 	ivec2 loc2	= ivec2(FFT_SIZE - loc1.x, FFT_SIZE - loc1.y);
 
-	vec2 h_tk;
 	vec2 h0_k	= imageLoad(tilde_h0, loc1).rg;
 	vec2 h0_mk	= imageLoad(tilde_h0, loc2).rg;
 	float w_k	= imageLoad(frequencies, loc1).r;
@@ -26,12 +25,12 @@ void main()
 	float sin_wt = sin(w_k * time);
 
 	// heightfield spectrum
+	vec2 h_tk;
 	h_tk.x = cos_wt * (h0_k.x + h0_mk.x) - sin_wt * (h0_k.y + h0_mk.y);
 	h_tk.y = cos_wt * (h0_k.y - h0_mk.y) + sin_wt * (h0_k.x - h0_mk.x);
 
 	// choppy field spectra
 	vec2 k;
-
 	k.x = float(FFT_SIZE / 2 - loc1.x);
 	k.y = float(FFT_SIZE / 2 - loc1.y);
 

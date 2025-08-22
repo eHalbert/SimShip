@@ -48,7 +48,7 @@ vec2 RotatePoint(vec2 point, vec2 pivot, float angle)
     vec2 rotated = vec2( translated.x * c - translated.y * s, translated.x * s + translated.y * c );
     return rotated + pivot;
 }
-vec4 ComputeFoam(vec2 uv, float factor)
+vec4 AddFoamWithBubbles(vec2 uv, float factor)
 {
 	vec2 dx = dFdx(uv);
 	vec2 dy = dFdy(uv);
@@ -60,6 +60,21 @@ vec4 ComputeFoam(vec2 uv, float factor)
 	// Extract the drawing from the foam
 	vec4 foamBubblesTexture = textureGrad(foamBubbles, tex * 20.0, dx, dy);
 	vec4 foamColor = vec4(1.0) * (1.0 + factor * foamBubblesTexture);
+			
+	// Mix the original color with the white foam
+	return mix(FragColor, foamColor, foamWhiteness * factor);
+}
+vec4 AddFoam(vec2 uv, float factor)
+{
+	vec2 dx = dFdx(uv);
+	vec2 dy = dFdy(uv);
+
+	// Extract only the white component of the foam texture
+	vec4 foamTexture = textureGrad(foamTexture, tex * 20.0, dx, dy);
+	float foamWhiteness = max(foamTexture.r, max(foamTexture.g, foamTexture.b));
+		
+	// Extract the drawing from the foam
+	vec4 foamColor = vec4(1.0) * (1.0 + factor * foamTexture);
 			
 	// Mix the original color with the white foam
 	return mix(FragColor, foamColor, foamWhiteness * factor);
@@ -149,7 +164,7 @@ void main()
 	// Foam
 	float combinedFoamFactor = max(texture(foamBuffer, tex).r, vFoamIntensity);
 	if (combinedFoamFactor > 0.0)
-		FragColor = ComputeFoam(tex, combinedFoamFactor);
+		FragColor = AddFoamWithBubbles(tex, combinedFoamFactor);
 
 	// Wake around the ship (texture: contourShip)
 	if (bWake)
@@ -165,11 +180,11 @@ void main()
 		{
 			float wakefactor = texture(contourShip, wakeUV).r;
 			if (wakefactor > 0.0)
-				FragColor = ComputeFoam(wakeUV, wakefactor);
+				FragColor = AddFoam(wakeUV, wakefactor);
 		}
 	}
 
-	// Wake fater the ship (texture: wakeBuffer)
+	// Wake after the ship (texture: wakeBuffer)
 	if (bWake)
 	{
 		// Calculate the UV coordinates of the decal
@@ -178,9 +193,9 @@ void main()
 		// Check that the sampling is in the valid region [0,1]
 		if (wakeUV.x >= 0.0 && wakeUV.x <= 1.0 && wakeUV.y >= 0.0 && wakeUV.y <= 1.0)
 		{
-			float wakefactor = texture(wakeBuffer, wakeUV).r;
-			if (wakefactor > 0.0)
-				FragColor = ComputeFoam(wakeUV, wakefactor);
+			float wakeFactor = texture(wakeBuffer, wakeUV).r;
+			if (wakeFactor > 0.0)
+				FragColor = AddFoam(wakeUV, wakeFactor);
 		}
 	}
 

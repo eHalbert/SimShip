@@ -30,7 +30,7 @@ uniform bool	bShowPatch;
 out vec4 FragColor;
 
 
-vec4 ComputeFoam(vec2 uv, float factor)
+vec4 AddFoamWithBubbles(vec2 uv, float factor)
 {
 	vec2 dx = dFdx(uv);
 	vec2 dy = dFdy(uv);
@@ -120,7 +120,7 @@ void main()
 	// Foam
 	float foamFactor = texture(foamBuffer, tex).r;
 	if (iFoam == 1 && foamFactor > 0.0 && lod < 3.0)
-		FragColor = ComputeFoam(tex, foamFactor);
+		FragColor = AddFoamWithBubbles(tex, foamFactor);
 
 	if (bAbsorbance)
 	{
