@@ -1,4 +1,8 @@
-﻿#include "Sky.h"
+﻿/* SimShip by Edouard Halbert
+This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License
+http://creativecommons.org/licenses/by-nc-nd/4.0/ */
+
+#include "Sky.h"
 
 extern "C"
 {
@@ -312,8 +316,8 @@ void Sky::SetTime(int hour, int minute)
     date.years = tm_utc.tm_year + 1900;
     date.months = tm_utc.tm_mon + 1;
     date.days = tm_utc.tm_mday;
-    date.hours = SunHour;
-    date.minutes = SunMinute;
+    date.hours = hour;
+    date.minutes = minute;
     date.seconds = 0.0;
 
     SunHour = hour;

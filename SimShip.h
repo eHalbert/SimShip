@@ -1,3 +1,7 @@
+/* SimShip by Edouard Halbert
+This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License
+http://creativecommons.org/licenses/by-nc-nd/4.0/ */
+
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN             // Exclure les en-têtes Windows rarement utilisés
@@ -80,11 +84,12 @@ float				g_DevicePixelRatio = 1.0f;
 wstring				g_CaptureName;
 
 // ImGui windows
-bool                g_bShowSceneWindow			= false;	// [ F1 ]
-bool                g_bShowShipWindow			= false;    // [ F2 ]
-bool                g_bShowStatusBar			= false;	// [ F3 ]
+bool                g_bShowSceneWindow			= false;	// [ F2 ]
+bool                g_bShowShipWindow			= false;    // [ F3 ]
+bool                g_bShowStatusBar			= false;	// [ F4 ]
+bool                g_bShowAutopilotWindow		= false;	// [ F5 ]
 bool                g_bShowOceanAnalysisWindow	= false;
-bool                g_bShowAutopilotWindow		= false;
+bool				g_bShowShortcuts			= false;
 
 SoundManager* SoundManager::instance	= nullptr; // Initialisation du pointeur statique (sinon, à placer dans un fichier Sound.cpp)
 SoundManager      * g_SoundMgr			= nullptr;
@@ -202,6 +207,38 @@ vector<sTerrain>    g_vTerrains;
 unique_ptr<Markup>  g_Markup;
 
 //////////////////////////////////////////////////
+vector<pair<string, string>> vShortcuts = {
+	{ "W", "Forward" },
+	{ "S", "Back" },
+	{ "A", "Left" },
+	{ "D", "Right" },
+	{ "Q", "Up" },
+	{ "E", "Down" },
+	{ "C", "Next camera" },
+	{ "E", "Previous camera" },
+	{ "I", "Interpolation of camera" },
+	{ "R click", "Binoculars" },
+	{ "T", "Textures 1 debug" },
+	{ "I", "Textures 2 debug" },
+	{ "Space", "Pause" },
+	{ "Esc", "Quit" },
+	{ "8", "Engine +" },
+	{ "5", "Engine stop" },
+	{ "2", "Engine -" },
+	{ "Del", "BowThruster left" },
+	{ "End", "BowThruster stop" },
+	{ "Page dn", "BowThruster right" },
+	{ "Left", "Rudder left" },
+	{ "Down", "Rudder stop" },
+	{ "Right", "Rudder right" },
+	{ "H", "Ship horn" },
+	{ "F2", "Scene settings" },
+	{ "F3", "Ship settings" },
+	{ "F4", "Status bar" },
+	{ "F5", "Autopilot settings" },
+	{ "F8", "Window capture" },
+	{ "F11", "Full screen" },
+};
 
 void	InitScene();
 void    InitFBO();

@@ -1,3 +1,7 @@
+/* SimShip by Edouard Halbert
+This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License
+http://creativecommons.org/licenses/by-nc-nd/4.0/ */
+
 #include "SimShip.h"
 
 extern GLuint   TexWakeBuffer;
@@ -217,6 +221,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
                 hm.hour = 23.0f;
         }
         g_Sky->SetTime(hm.hour, hm.minute);
+        cout << g_Sky->SunHour << endl;
     }
     else if (IsInRect(g_CtrlTimeMinute, mouse))
     {
@@ -250,6 +255,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
             }
         }
         g_Sky->SetTime(hm.hour, hm.minute);
+        cout << g_Sky->SunHour << endl;
     }
     else if (IsInRect(g_CtrlWind, mouse))
     {
@@ -375,7 +381,10 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         case GLFW_KEY_KP_MULTIPLY:
             g_Ship->SurgeVelocity = KnotsToMS(g_Ship->ship.SpeedMaxKn);
             break;
-        // Textures
+        case GLFW_KEY_L:
+            g_Ship->bLights = !g_Ship->bLights;
+            break;
+            // Textures
         case GLFW_KEY_T:
             g_bTextureDisplay = !g_bTextureDisplay;
             break;
@@ -438,15 +447,21 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             break;
         // Windows
         case GLFW_KEY_F1:
-            g_bShowSceneWindow = !g_bShowSceneWindow;
+            g_bShowShortcuts = !g_bShowShortcuts;
             break;
         case GLFW_KEY_F2:
-            g_bShowShipWindow = !g_bShowShipWindow;
+            g_bShowSceneWindow = !g_bShowSceneWindow;
             break;
         case GLFW_KEY_F3:
+            g_bShowShipWindow = !g_bShowShipWindow;
+            break;
+        case GLFW_KEY_F4:
             g_bShowStatusBar = !g_bShowStatusBar;
             break;
         break;
+        case GLFW_KEY_F5:
+            g_bShowAutopilotWindow = !g_bShowAutopilotWindow;
+            break;
         case GLFW_KEY_F8:
             g_CaptureName = SaveClientArea(g_hWnd);
             break;
@@ -2181,8 +2196,7 @@ void RenderImGui()
         // Change the background color
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
 
-        //ImGui::Begin("Parameters [F1]", nullptr, ImGuiWindowFlags_NoMove);
-        if (ImGui::Begin("Scene [F1]", &g_bShowSceneWindow))
+        if (ImGui::Begin("Scene [F2]", &g_bShowSceneWindow))
         {
             if (ImGui::Checkbox("VSYNC", &g_bVsync))
                 SetVsync((int)g_bVsync);
@@ -2488,7 +2502,7 @@ void RenderImGui()
         ImGui::SetNextWindowSize(window_size, ImGuiCond_FirstUseEver);
         float gray = 56.0f / 255.0f;
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
-        if (ImGui::Begin("Ship [F2]", &g_bShowShipWindow))
+        if (ImGui::Begin("Ship [F3]", &g_bShowShipWindow))
         {
             string temp;
             if (g_vShips.size() && g_NoShip >= 0 && g_NoShip < g_vShips.size())
@@ -2697,7 +2711,7 @@ void RenderImGui()
         ImVec2 window_pos((g_WindowW - 350) / 2, g_WindowH - 300);
         ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(gray, gray, gray, 0.75f));
-        if (ImGui::Begin("Autopilot", &g_bShowAutopilotWindow))
+        if (ImGui::Begin("Autopilot [F5]", &g_bShowAutopilotWindow))
         {
             ImGui::SliderFloat("P", &g_Ship->ship.BaseP, 0.0f, 20.0f, "%.1f");
             ImGui::SliderFloat("I", &g_Ship->ship.BaseI, 0.0f, 20.0f, "%.1f");
@@ -3953,6 +3967,48 @@ void RenderDashboard()
         }
     }
 }
+void RenderShortcuts()
+{
+    if (!g_bShowShortcuts)
+        return;
+
+    float padding = 10.0f;
+    float lineHeight = 20.0f;
+    float boxWidth = 250.0f;
+    float boxHeight = lineHeight * vShortcuts.size() + padding * 2;
+
+    // Center horizontally
+    float x = (g_WindowW - boxWidth) / 2.0f;
+
+    // Center vertically
+    float y = (g_WindowH - boxHeight) / 2.0f;
+
+    // Semi-transparent background
+    nvgBeginPath(g_Nvg);
+    nvgRect(g_Nvg, x, y, boxWidth, boxHeight);
+    nvgFillColor(g_Nvg, nvgRGBA(0, 0, 0, 160));
+    nvgFill(g_Nvg);
+
+    // Text
+    nvgFontSize(g_Nvg, 18.0f);
+    nvgFontFace(g_Nvg, "arial");
+    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+
+    float textXKey = x + padding;
+    float textXDesc = x + boxWidth - padding;
+    float textY = y + padding + lineHeight * 0.8f;
+
+    for (const auto& shortcut : vShortcuts)
+    {
+        nvgTextAlign(g_Nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        nvgText(g_Nvg, textXKey, textY, shortcut.first.c_str(), NULL);
+
+        nvgTextAlign(g_Nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgText(g_Nvg, textXDesc, textY, shortcut.second.c_str(), NULL);
+
+        textY += lineHeight;
+    }
+}
 
 void Render()
 {
@@ -4166,6 +4222,7 @@ void Render()
         RenderTitle(g_WindowW - 70, g_WindowH - 25, 36.0f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         RenderInfo();
         RenderDashboard();
+        RenderShortcuts();
     }
     nvgEndFrame(g_Nvg);
 

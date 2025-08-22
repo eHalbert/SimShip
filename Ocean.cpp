@@ -1,4 +1,8 @@
-﻿#include "Ocean.h"
+﻿/* SimShip by Edouard Halbert
+This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License
+http://creativecommons.org/licenses/by-nc-nd/4.0/ */
+
+#include "Ocean.h"
 
 #include <stdlib.h>
 #include <iostream>
@@ -189,7 +193,6 @@ void Ocean::Init()
     // Create the texture of the wake
     mTexFoam = make_unique<Texture>();
     mTexFoam->CreateFromFile("Resources/Ocean/seamless-seawater-with-foam-1.jpg");
-
     glBindTexture(GL_TEXTURE_2D, mTexFoam->id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy);
 
