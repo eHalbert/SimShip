@@ -1,5 +1,8 @@
 # SimShip
-Simulation of a ship moving on a cinematic-quality ocean. (https://www.youtube.com/watch?v=ywmwANNGrns&ab_channel=EdouardHalbert)
+Simulation of a ship moving on a cinematic-quality ocean. 
+
+(https://www.youtube.com/watch?v=ywmwANNGrns&ab_channel=EdouardHalbert)
+(https://sourceforge.net/projects/simship/files/SimShip-1.0_Setup.exe/download)
 
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
