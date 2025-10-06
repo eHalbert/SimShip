@@ -1,0 +1,11 @@
+Model Information:
+* title:	HMS Clyde
+* source:	https://sketchfab.com/3d-models/hms-clyde-c395352ef9ec4985b53b015e6b395cdd
+* author:	Zak Lloyd (https://sketchfab.com/zaklloyd)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "HMS Clyde" (https://sketchfab.com/3d-models/hms-clyde-c395352ef9ec4985b53b015e6b395cdd) by Zak Lloyd (https://sketchfab.com/zaklloyd) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
