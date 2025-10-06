@@ -21,9 +21,11 @@ struct Light
 in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
+in vec4 FragPosLightSpace;
 
 uniform sampler2D   texture_diffuse1;
 uniform samplerCube envmap;
+uniform sampler2D   shadowMap;
 
 uniform vec3        viewPos;
 uniform float       exposure;
@@ -31,6 +33,7 @@ uniform Material    material;
 uniform Light       light;
 uniform bool        has_texture;
 uniform float		envmapFactor;
+uniform bool        bShipShadow;
 
 const float specularIntensity = 0.5;
 
@@ -81,6 +84,39 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
 vec3 AdjustContrast(vec3 color, float contrast) {
     return clamp(mix(vec3(0.5), color, contrast), 0.0, 1.0);
 }
+float PCF_TextureGather(vec3 projCoords, float bias)
+{
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    float shadow = 0.0;
+
+    // Récupère directement 4 profondeurs autour de la coordonnée donnée
+    // textureGather retourne un vec4 avec 4 échantillons voisins (rouge, vert, bleu, alpha)
+    // On effectue la comparaison parallèle en utilisant le ref, qui est projCoords.z dans sampler2DShadow
+    vec4 depthSamples = textureGather(shadowMap, projCoords.xy);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        float compare = step(depthSamples[i], projCoords.z - bias); // 0.005 = biais
+        shadow += compare;
+    }
+
+    shadow /= 4.0;
+
+    return shadow;
+}
+
+float ShadowCalculation(vec3 N, vec3 L)
+{
+    vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if(projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+        return 0.0;
+
+    // Dynamic calculation of bias as a function of light-surface angle
+    float bias = max(0.005 * (1.0 - dot(N, L)), 0.005);
+    return PCF_TextureGather(projCoords, bias);
+}
 
 void main()
 {
@@ -123,8 +159,13 @@ void main()
     vec3 envColor = texture(envmap, R).rgb;
     float envReflect = envmapFactor * clamp(material.metallic + (1.0 - material.roughness), 0.0, 1.0);
     
+    // Shadow
+    float shadow = 0.0f;
+    if (bShipShadow)
+        shadow = ShadowCalculation(N, L);                      
+
     // Result
-    vec3 hdrColor = ambient + diffuse + specular + emission;
+    vec3 hdrColor = ambient + (1.0 - shadow) * (diffuse + specular + emission);
     
     // Résultat HDR
     hdrColor += envColor * envReflect; // Ajout de la réflexion HDRI
