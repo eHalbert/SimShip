@@ -21,7 +21,8 @@ using namespace std;
 using namespace glm;
 using InterpFunc = std::function<float(float)>;
 
-enum eCameraMode{ ORBITAL, FPS, IN_FIXED, IN_FREE, OUT_FREE, CAMERA_MODE_COUNT };
+enum eCameraMode{ ORBITAL, BRIDGE, FPS, CAMERA_MODE_COUNT };
+enum eBridgeView { WHEEL, LEFT, RIGHT, BOW, STERN };
 
 static float LinInterp(float t) { return t; }
 static float SmoothStepInterp(float t) { return t * t * (3.0f - 2.0f * t); }
@@ -42,13 +43,14 @@ public:
     void    SetViewportSize(int width, int height);
     void    SetPosition(vec3 posCamera);
     void    SetInterpolation(eInterpolation type) { mInterpolation = type; }
+    void    SetFirstUpdate(bool flag) { bFirstUpdate = flag; }
 
     // Inputs
     void    KeyboardUpdate(int key, int scancode, int action, int mods);
     void    MousePosUpdate(double xpos, double ypos);
     void    MouseButtonUpdate(int button, int action, int mods);
-    void    Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& view1Target);
-    InterpFunc mInterpFunc = [](float t) { return t; }; // linéaire par défaut
+    void    Animate(float deltaT, vec3& orbitalTarget, vec3& viewPos, vec3& viewTarget);
+    InterpFunc mInterpFunc = [](float t) { return t; }; // linear by default
 
     // Get
     vec3    GetPosition() const { return mPosition; }
@@ -132,26 +134,19 @@ private:
 
     typedef enum
     {
-        MoveUp,
-        MoveDown,
-        MoveLeft,
-        MoveRight,
         MoveForward,
         MoveBackward,
-        Stop,
+        MoveLeft,
+        MoveRight,
+        MoveUp,
+        MoveDown,
 
-        YawRight,
-        YawLeft,
-        PitchUp,
-        PitchDown,
-        RollLeft,
-        RollRight,
+        Orbital,
+        Bridge,
+        Fps,
 
         SpeedUp,
         SlowDown,
-
-        PreviousCamera,
-        NextCamera,
 
         KeyboardControlCount,
     } KeyboardControls;
@@ -167,20 +162,15 @@ private:
     } MouseButtons;
 
     const map<int, int> mKeyboardMap = {
-        { GLFW_KEY_E,           KeyboardControls::MoveUp },
-        { GLFW_KEY_Q,           KeyboardControls::MoveDown },
-        { GLFW_KEY_A,           KeyboardControls::MoveLeft },
-        { GLFW_KEY_D,           KeyboardControls::MoveRight },
         { GLFW_KEY_W,           KeyboardControls::MoveForward },
         { GLFW_KEY_S,           KeyboardControls::MoveBackward },
-        { GLFW_KEY_LEFT,        KeyboardControls::YawLeft },
-        { GLFW_KEY_RIGHT,       KeyboardControls::YawRight },
-        { GLFW_KEY_UP,          KeyboardControls::PitchUp },
-        { GLFW_KEY_DOWN,        KeyboardControls::PitchDown },
-        { GLFW_KEY_Z,           KeyboardControls::RollLeft },
-        { GLFW_KEY_X,           KeyboardControls::RollRight },
-        { GLFW_KEY_C,           KeyboardControls::PreviousCamera },
-        { GLFW_KEY_V,           KeyboardControls::NextCamera },
+        { GLFW_KEY_A,           KeyboardControls::MoveLeft },
+        { GLFW_KEY_D,           KeyboardControls::MoveRight },
+        { GLFW_KEY_E,           KeyboardControls::MoveUp },
+        { GLFW_KEY_Q,           KeyboardControls::MoveDown },
+        { GLFW_KEY_C,           KeyboardControls::Orbital },
+        { GLFW_KEY_B,           KeyboardControls::Bridge },
+        { GLFW_KEY_F,           KeyboardControls::Fps },
         { GLFW_KEY_LEFT_SHIFT,  KeyboardControls::SpeedUp },
         { GLFW_KEY_LEFT_CONTROL,KeyboardControls::SlowDown },
     };

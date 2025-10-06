@@ -33,6 +33,7 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 struct sMark
 {
 	wstring name;
+    vec3    pos;
 	wstring colour;
 	int     boyshp;
 	int     bcnshp;
@@ -42,8 +43,9 @@ struct sMark
 	int     pylone;
 	int     silo;
 	int     mooring;
-    int     N = -1;
-	double  lat, lon;
+    int     idxModel = -1;
+    double  time;
+    vec3    lightColor;
 };
 
 // File must have Lon and Lat with dots dor decimal
@@ -56,25 +58,45 @@ public:
 		// Load zones from XML file
         LoadMarksFromXML(fullname.c_str());
 
-        // Load the different buoys
-        mBuoy[0] = make_unique<Model>("Resources/Models/Buoys/Buoy-North.glb");
-        mBuoy[1] = make_unique<Model>("Resources/Models/Buoys/Buoy-East.glb");
-        mBuoy[2] = make_unique<Model>("Resources/Models/Buoys/Buoy-South.glb");
-        mBuoy[3] = make_unique<Model>("Resources/Models/Buoys/Buoy-West.glb");
-        mBuoy[4] = make_unique<Model>("Resources/Models/Buoys/Buoy-Port.glb");
-        mBuoy[5] = make_unique<Model>("Resources/Models/Buoys/Buoy-Starboard.glb");
-        mBuoy[6] = make_unique<Model>("Resources/Models/Buoys/Buoy-Danger.glb");
+        // Initialiser le générateur aléatoire avec un seed unique (ici avec l'heure)
+        std::mt19937 rng(static_cast<unsigned int>(time(nullptr)));
+        std::uniform_real_distribution<double> dist(0.0, 8.0); // Cycle max = 8 secondes
 
-		mShader = make_unique<Shader>("Resources/Shaders/sun.vert", "Resources/Shaders/sun.frag");
+        // Pour chaque bouée, initialiser un décalage de temps aléatoire
+        for (auto& mark : mvMarks)
+            mark.time = dist(rng); // décalage aléatoire en secondes
+
+        // Load the different buoys
+        mBuoy[0] = make_unique<Model>("Resources/Buoys/Buoy-North.glb");
+        mBuoy[1] = make_unique<Model>("Resources/Buoys/Buoy-East.glb");
+        mBuoy[2] = make_unique<Model>("Resources/Buoys/Buoy-South.glb");
+        mBuoy[3] = make_unique<Model>("Resources/Buoys/Buoy-West.glb");
+        mBuoy[4] = make_unique<Model>("Resources/Buoys/Buoy-Portside.glb");
+        mBuoy[5] = make_unique<Model>("Resources/Buoys/Buoy-Starboard.glb");
+        mBuoy[6] = make_unique<Model>("Resources/Buoys/Buoy-Danger.glb");
+
+        vvPatterns = {
+        {1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0}, // N
+        {1, 0, 1, 0, 1, 0, 0, 0},                                                       // E
+        {1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0},                                     // S
+        {1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0},                   // W
+        {1, 1, 0, 0},
+        {0, 1, 1, 0},
+        {1, 0, 1, 0, 0, 0, 0, 0},
+        };
+		
+        mShader = make_unique<Shader>("Resources/Misc/sun.vert", "Resources/Misc/sun.frag");
+        mShaderNavLight = make_unique<Shader>("Resources/Ship/ship_light.vert", "Resources/Ship/ship_light.frag");  // For the navigation lights
+        mLight = make_unique<Sphere>(1.0f, 8);
 	};
 	~Markup() {};
-
 
 	void Render(Camera& camera, Ocean* ocean, Sky* sky)
 	{
 		if (!bVisible)
 			return;
 
+        // Models
         mShader->use();
         mShader->setVec3("light.position", sky->SunPosition);
         mShader->setVec3("light.ambient", sky->SunAmbient);
@@ -89,21 +111,36 @@ public:
         mShader->setMat4("projection", camera.GetProjection());
 
         vec3 eye = camera.GetPosition();
-        for (auto& m : mvMarks)
+        for (auto& mark : mvMarks)
         {
-            if (m.name == L"Men er Roué")
-                cout << "";
-            vec2 p = LonLatToOpenGL(m.lon, m.lat);
-            vec3 pos = vec3(p.x, 0.0f, p.y);
-            if (m.boyshp > 0 && glm::length2(pos - eye) < 10000.0f)
-                ocean->GetVertice(pos, pos);
-            mat4 model = glm::translate(mat4(1.0f), pos);
-            //model = glm::scale(model, vec3(10.0f));
+            mat4 model = glm::translate(mat4(1.0f), mark.pos);
             mShader->setMat4("model", model);
-            if (m.N != -1)
-                mBuoy[m.N]->Render(*mShader); continue;
+            mBuoy[mark.idxModel]->Render(*mShader);
         }
-        vec2 p = OpenGLToLonLat(17914, 8764);
+
+        // Lights
+        if (sky->SunPosition.y < 0.0f)
+        {
+            for (auto& mark : mvMarks)
+            {
+                int patternLength = static_cast<int>(vvPatterns[mark.idxModel].size());
+                int currentIndex = static_cast<int>(floor((glfwGetTime() + mark.time) * 2)) % patternLength;    // Each element of the pattern is 0.5 second (=> * 2)
+                bool lightOn = vvPatterns[mark.idxModel][currentIndex] == 1;
+                if (!lightOn)
+                    continue;
+
+                mShaderNavLight->use();     // Misc/ship_light.vert, Misc/ship_light.frag
+                vec3 p = mark.pos;
+                p.y = 4.5f;
+                mat4 model = glm::translate(mat4(1.0f), p);
+                mShaderNavLight->setMat4("model", model);
+                mShaderNavLight->setMat4("view", camera.GetView());
+                mShaderNavLight->setMat4("projection", camera.GetProjection());
+                mShaderNavLight->setVec3("lightColor", mark.lightColor);
+                mShaderNavLight->setVec3("viewPos", camera.GetPosition());
+                mLight->Bind();
+            }
+        }
 	}
 	
     bool bVisible = true;
@@ -139,37 +176,52 @@ private:
                 mark.pylone = markNode.child(L"Pylone").attribute(L"value").as_int();
                 mark.silo = markNode.child(L"Silo").attribute(L"value").as_int();
                 mark.mooring = markNode.child(L"Mooring").attribute(L"value").as_int();
-                mark.lat = markNode.child(L"Latitude").attribute(L"value").as_double();
-                mark.lon = markNode.child(L"Longitude").attribute(L"value").as_double();
+                float lat = markNode.child(L"Latitude").attribute(L"value").as_float();
+                float lon = markNode.child(L"Longitude").attribute(L"value").as_float();
+                mark.pos = LonLatToOpenGL(lon, lat);
 
-                if (mark.cardinal == 1)
-                    mark.N = 0;
-                else if (mark.cardinal == 2)
-                    mark.N = 1;
-                else if (mark.cardinal == 3)
-                    mark.N = 2;
-                else if (mark.cardinal == 4)
-                    mark.N = 3;
-                else if (mark.lateral == 1)
-                    mark.N = 4;
-                else if (mark.lateral == 2)
-                    mark.N = 5;
-                else if (mark.colour == L"2,3,2")
-                    mark.N = 6;
+                if (mark.cardinal == 1)         mark.idxModel = 0;  // Buoy-North
+                else if (mark.cardinal == 2)    mark.idxModel = 1;  // Buoy-East
+                else if (mark.cardinal == 3)    mark.idxModel = 2;  // Buoy-South
+                else if (mark.cardinal == 4)    mark.idxModel = 3;  // Buoy-West
+                
+                else if (mark.lateral == 1)     mark.idxModel = 4;  // Buoy-Portside
+                else if (mark.lateral == 2)     mark.idxModel = 5;  // Buoy-Starboard
+                
+                else if (mark.colour == L"2,3,2") mark.idxModel = 6;// Buoy-Danger
 
-                mvMarks.push_back(mark);
+                switch (mark.idxModel)
+                {
+                case 0:
+                case 1:
+                case 2:
+                case 3:
+                    mark.lightColor = vec3(1.0f, 1.0f, 1.0f); break;
+                case 4:
+                    mark.lightColor = vec3(1.0f, 0.0f, 0.0f); break;
+                case 5:
+                    mark.lightColor = vec3(0.0f, 1.0f, 0.0f); break;
+                case 6:
+                    mark.lightColor = vec3(1.0f, 1.0f, 0.0f); break;
+                }
+
+                if(mark.idxModel != -1)
+                    mvMarks.push_back(mark);
             }
         }
         else
         {
             // Handle file loading error
-            std::wcerr << L"Erreur de chargement du fichier XML : " << result.description() << std::endl;
+            std::wcerr << L"Error loading XML file: " << result.description() << std::endl;
         }
     }
 
-	unique_ptr<Shader>	mShader;
+    unique_ptr<Shader>	mShader;
+    unique_ptr<Shader>	mShaderNavLight;
 	unique_ptr<Model>	mBuoy[7];
     vector<sMark>       mvMarks;
+    unique_ptr<Sphere>	mLight = 0;
+    vector<vector<int>> vvPatterns; 
 };
 
 

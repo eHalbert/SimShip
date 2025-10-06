@@ -36,6 +36,7 @@ static const struct { float k, r, g, b; } blackbodyLUT[] = {
     {10000,0.568f, 0.816f, 1.000f}
 };
 
+
 Sky::Sky(vec2 pos, int width, int height)
 {
     LongitudeObserver = pos.x;
@@ -376,8 +377,8 @@ sHM Sky::GetTime()
         }
     }
     sHM hm{};
-    hm.hour = SunHour + hour;
-    hm.minute = SunMinute + minute;
+    hm.hour = glm::clamp(SunHour + hour, 0, 23);
+    hm.minute = glm::clamp(SunMinute + minute, 0, 59);
 
     return hm;
 }

@@ -70,7 +70,7 @@ public:
         glEnableVertexAttribArray(0);
         glBindVertexArray(0);
 
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
 
         bVisible = true;
     };
@@ -180,7 +180,7 @@ public:
 
         glBindVertexArray(0);
 
-        mShader = new Shader("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = new Shader("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
         bVisible = true;
     };
     ~Cube()
@@ -306,7 +306,7 @@ public:
         glEnableVertexAttribArray(0);
         glBindVertexArray(0);
 
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
 
         bVisible = true;
     };
@@ -397,7 +397,7 @@ public:
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
         glBindVertexArray(0);
 
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
 
         bVisible = true;
     };
@@ -484,7 +484,7 @@ public:
         glBindVertexArray(0);
 
         mSegments = segments;
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
         bVisible = true;
     }
     ~Disk()
@@ -592,7 +592,7 @@ public:
 
         glBindVertexArray(0);
 
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
         bVisible = true;
     }
     ~Cylinder()
@@ -714,7 +714,7 @@ public:
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vec2), (void*)0);
         glEnableVertexAttribArray(2);
 
-        mShader = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");
+        mShader = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");
 
         bVisible = true;
     };
@@ -730,7 +730,7 @@ public:
         if (!bVisible)
             return;
 
-        glUseProgram(mShader->ID);  // Shaders/unicolor.vert, Shaders/unicolor.frag
+        glUseProgram(mShader->ID);  // Misc/unicolor.vert, Misc/unicolor.frag
         mShader->setMat4("view", camera.GetView());
         mShader->setMat4("projection", camera.GetProjection());
         mat4 model = glm::translate(mat4(1.0f), pos);
@@ -780,7 +780,7 @@ public:
         glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
         glEnableVertexAttribArray(1);
 
-        mShader = make_unique<Shader>("Resources/Shaders/quad.vert", "Resources/Shaders/quad.frag");
+        mShader = make_unique<Shader>("Resources/Misc/quad.vert", "Resources/Misc/quad.frag");
 
         if (texture.length())
             mTextureID = LoadTexture(texture.c_str());

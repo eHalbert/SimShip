@@ -3,17 +3,16 @@ This work is licensed under a Creative Commons Attribution-NonCommercial-NoDeriv
 http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 
 #include "Ship.h"
-#include <omp.h>
-#include "MeshPlaneIntersect.hpp"
+#include "MeshPlaneIntersect.hpp"   // Used to find a contour
 #include <math.h>
 
-#include "clipper/clipper.h"
+#include "clipper/clipper.h"        // Used to offset a contour
 #ifdef _DEBUG
 #pragma comment(lib, "clipper/Debug/clipper.lib")
 #else
 #pragma comment(lib, "clipper/Release/clipper.lib")
 #endif
-using namespace Clipper2Lib;
+using namespace Clipper2Lib;        
 
 //#define DEBUG_SMOKE // Update smoke.comp with 2 lines: layout(std430, binding = 1) buffer CounterBuffer { int liveCounter; }; atomicAdd(liveCounter, 1);
 
@@ -22,6 +21,8 @@ extern vec2             g_Wind;
 extern SoundManager   * g_SoundMgr;
 extern bool             g_bPause;
 extern Camera           g_Camera;
+extern bool             g_bShipShadow;
+extern bool             g_bShowShipForcesWindows;
 
 GLuint                  TexContourShip      = 0;                // Texture of the contour of the ship
 int                     TexContourShipW;
@@ -30,8 +31,9 @@ GLuint                  TexWakeBuffer       = 0;
 int					    TexWakeBufferSize   = 512;
 GLuint                  TexWakeVao          = 0;
 int					    TexWakeVaoSize      = 1024;
-
 bool                    bTexWakeByVAO       = true;
+GLuint				    TexShadowMap        = 0;
+mat4				    LightViewProjection;
 
 
 Ship::~Ship()
@@ -44,7 +46,7 @@ Ship::~Ship()
     glDeleteVertexArrays(1, &mVaoLines);
 
     mModelFull.reset();
-    mPropeller.reset();
+    mPropeller1.reset();
     mRudder.reset();
     mLight.reset();
     mRadar1.reset();
@@ -54,7 +56,7 @@ Ship::~Ship()
     mShaderWireframe.reset();
     mShaderPressure.reset();
     mShaderCamera.reset();
-    mShaderShip.reset();
+    mShaderShipShadow.reset();
     mShaderUnicolor.reset();
     mShaderNavLight.reset();
 
@@ -64,8 +66,9 @@ Ship::~Ship()
     mForceApplication.reset();
     mAxis.reset();
 
-    mSoundPower.reset();
+    mSoundThrust1.reset();
     mSoundBowThruster.reset();
+    mSoundSternThruster.reset();
 
     glDeleteVertexArrays(1, &mVaoWake);
     glDeleteBuffers(1, &mVboWake);
@@ -105,7 +108,7 @@ void Ship::Init(sShip& ship, Camera& camera)
     // Read the mvVertices and the faces
     igl::readOBJ(ship.PathnameHull.c_str(), mV, mF);
     stringstream ssHull;
-    ssHull << mV.rows() << " vertices & " << mF.rows() << " faces" << endl;
+    ssHull << "Hull: " << mV.rows() << " vertices & " << mF.rows() << " faces" << endl;
 
     // Vertices
     mvVertices.resize(mV.rows());
@@ -115,26 +118,24 @@ void Ship::Init(sShip& ship, Camera& camera)
     TransformVertices();
 
     // Get data
-    InitBoundingBox();
     InitDimensions();
 
     UpdateWorldMatrix();                        // Necessary for several calculations to come
 
     mvTris.resize(mF.rows());
-    InitTriangles();                             // Create the list of the triangles
-    InitCentroid();                              // Compute the centre of the volume
-    InitSurfaces();                              // Certain surfaces
-    InitVolume();                                // Total volume of the hull
-    InitInertia();                      // Compute all moments of inertia (Ixx, Iyy, Izz, Ixy, Ixz, Iyz)
+    InitTriangles();                            // Create the list of the triangles
+    InitCentroid();                             // Compute the centre of the volume
+    InitSurfaces();                             // Certain surfaces
+    InitInertia();                              // Compute volume & all moments of inertia (Ixx, Iyy, Izz, Ixy, Ixz, Iyz)
     
     // Info to display with interface
     ssHull << "Length/Width : " << std::fixed << std::setprecision(2) << mLength << " m x " << mWidth << " m " << endl;
-    ssHull << "Draft : " << std::fixed << std::setprecision(2) << mDraft << endl;
+    ssHull << "Draft : " << std::fixed << std::setprecision(2) << mDraft << " m" << endl;
     ssHull << "Mass : " << std::setprecision(0) << int(ship.Mass_t) << " t" << endl;
     InfoHull = ssHull.str();
    
-    InitWaterVertices();                         // Create the list of water vertices in the reference patch
-    InitVaoHull();                                // Create the VAO of the colored hull
+    InitWaterVertices();                        // Create the list of water vertices in the reference patch
+    InitVaoHull();                              // Create the VAO of the colored hull
     InitContours();
     InitShaders();
     InitTextures();
@@ -152,30 +153,37 @@ void Ship::Init(sShip& ship, Camera& camera)
 #ifdef TRACE
     InitTrace();
 #endif
-}
-void Ship::InitBoundingBox()
-{
-    mBbox.min = vec3(FLT_MAX);
-    mBbox.max = vec3(FLT_MIN);
 
-    if (mvVertices.size() > 0)
-    {
-        for (auto& v : mvVertices)
-        {
-            mBbox.min = glm::min(mBbox.min, v);
-            mBbox.max = glm::max(mBbox.max, v);
-        }
-    }
-    else
-    {
-        mBbox.min = vec3(0.0f);
-        mBbox.max = vec3(0.0f);
-    }
+    Archimede.Name = "Archimede";
+    Gravity.Name = "Gravity";
+    ResistanceHeave.Name = "ResistanceHeave";
+    Thrust1.Name = "Thrust1";
+    Thrust2.Name = "Thrust2";
+    PropDrag1.Name = "PropDrag1";
+    PropDrag2.Name = "PropDrag2";
+    PropTorque1.Name = "PropTorque1";
+    PropTorque2.Name = "PropTorque2";
+    ResistanceViscous.Name = "ResistanceViscous";
+    ResistanceWaves.Name = "ResistanceWaves";
+    ResistanceResidual.Name = "ResistanceResidual";
+    BowThrust.Name = "BowThrust";
+    SternThrust.Name = "SternThrust";
+    RudderLift.Name = "RudderLift";
+    RudderDrag.Name = "RudderDrag";
+    WindRotation.Name = "WindRotation";
+    WindFront.Name = "WindFront";
+    WindRear.Name = "WindRear";
+    ResistanceAir.Name = "ResistanceAir";
+    Centrifugal.Name = "Centrifugal";
 }
 void Ship::InitDimensions()
 {
+    mModelFull = make_unique<Model>(ship.PathnameFull);
+    mBbox = mModelFull->GetBoundingBox();
     mMass = ship.Mass_t * 1000.0f;              // t -> kg for all physical calculations
     mPowerW = ship.PowerkW * 1000.0f;           // kW -> W for all physical calculations
+    if (ship.nPropeller == 2)
+        mPowerW *= 0.5f;
     mLength = fabs(mBbox.max.x - mBbox.min.x);  // Overall length
     mWidth = fabs(mBbox.max.z - mBbox.min.z);   // Overall width
     mHeight = fabs(mBbox.max.y - mBbox.min.y);  // Overall height
@@ -216,6 +224,17 @@ void Ship::InitCentroid()
     cout << "Centroid : ( " << mCentroid.x << ", " << mCentroid.y << ", " << mCentroid.z << " )" << endl;
 #endif
 }
+bool IsPolygonClockwise(const Clipper2Lib::Path64& polygon)
+{
+    int64_t sum = 0;
+    int n = (int)polygon.size();
+    for (int i = 0; i < n; ++i)
+    {
+        int j = (i + 1) % n;
+        sum += (polygon[j].x - polygon[i].x) * (polygon[j].y + polygon[i].y);
+    }
+    return sum > 0; // true si dans le sens horaire (clockwise)
+}
 void Ship::InitSurfaces()
 {
     // Area
@@ -231,38 +250,164 @@ void Ship::InitSurfaces()
     cout << "Surface XZ : " << AreaXZ << " m2" << endl;
     cout << "Surface : " << AreaWettedMax << " m2" << endl;
 #endif
-}
-void Ship::InitVolume()
-{
-    vec3 a, b, c;
-    mVolume = 0.0f;
-    for (auto& tri : mvTris)
+
+    if (ship.AreaFront != 0.0f && ship.AreaLat != 0.0f)
     {
-        a.x = mvVertices[tri.I[0]].x;
-        a.y = mvVertices[tri.I[0]].y;
-        a.z = mvVertices[tri.I[0]].z;
-
-        b.x = mvVertices[tri.I[1]].x;
-        b.y = mvVertices[tri.I[1]].y;
-        b.z = mvVertices[tri.I[1]].z;
-
-        c.x = mvVertices[tri.I[2]].x;
-        c.y = mvVertices[tri.I[2]].y;
-        c.z = mvVertices[tri.I[2]].z;
-
-        // Signed volume of this tetrahedron
-        mVolume += a.x * b.y * c.z + a.y * b.z * c.x + b.x * c.y * a.z - (c.x * b.y * a.z + b.x * a.y * c.z + c.y * b.z * a.x);
+        AreaFront = ship.AreaFront;
+        AreaFrontCenter = ship.AreaFrontCenter;
+        AreaLat = ship.AreaLat;
+        AreaLatCenter = ship.AreaLatCenter;
+        return;
     }
-    mVolume /= 6.0f;
 
-#ifdef PROPERTIES
-    cout << "Volume : " << mVolume << " m3" << endl;
-#endif
+    vector<Mesh>& vMeshes = mModelFull->GetMesh();
+
+    // Get the vertices
+    Clipper2Lib::Paths64 projectedFront;
+    Clipper2Lib::Paths64 projectedLat;
+    double scale = 1e4;
+    double scale2 = scale * scale;
+
+    for (const auto& mesh : vMeshes)
+    {
+        for (size_t i = 0; i < mesh.vIndices.size(); i += 3)
+        {
+            const sVertex& v0 = mesh.vVertices[mesh.vIndices[i]];
+            const sVertex& v1 = mesh.vVertices[mesh.vIndices[i + 1]];
+            const sVertex& v2 = mesh.vVertices[mesh.vIndices[i + 2]];
+
+            Clipper2Lib::Path64 triFront;
+            triFront.push_back({ (int64_t)(v0.Position.y * scale), (int64_t)(v0.Position.z * scale) });
+            triFront.push_back({ (int64_t)(v1.Position.y * scale), (int64_t)(v1.Position.z * scale) });
+            triFront.push_back({ (int64_t)(v2.Position.y * scale), (int64_t)(v2.Position.z * scale) });
+            projectedFront.push_back(triFront);
+        
+            Clipper2Lib::Path64 triLat;
+            triLat.push_back({ (int64_t)(v0.Position.x * scale), (int64_t)(v0.Position.y * scale) });
+            triLat.push_back({ (int64_t)(v1.Position.x * scale), (int64_t)(v1.Position.y * scale) });
+            triLat.push_back({ (int64_t)(v2.Position.x * scale), (int64_t)(v2.Position.y * scale) });
+            projectedLat.push_back(triLat);
+        }
+    }
+
+    // Reverse the clockwise polygons
+    for (auto& poly : projectedFront)
+        if (IsPolygonClockwise(poly))
+            std::reverse(poly.begin(), poly.end());
+
+    for (auto& poly : projectedLat)
+        if (IsPolygonClockwise(poly))
+            std::reverse(poly.begin(), poly.end());
+
+    // Area front
+    Clipper2Lib::Path64 clipPolygonFront;
+    clipPolygonFront.push_back({ (int64_t)0, numeric_limits<int64_t>::min() / 2 });
+    clipPolygonFront.push_back({ numeric_limits<int64_t>::max() / 2, numeric_limits<int64_t>::min() / 2 });
+    clipPolygonFront.push_back({ numeric_limits<int64_t>::max() / 2, numeric_limits<int64_t>::max() / 2 });
+    clipPolygonFront.push_back({ (int64_t)0, numeric_limits<int64_t>::max() / 2 });
+
+    Clipper2Lib::Clipper64 clipperFront;
+    clipperFront.AddSubject(projectedFront);
+    clipperFront.AddClip(Clipper2Lib::Paths64{ clipPolygonFront });
+
+    Clipper2Lib::Paths64 solutionFront;
+    clipperFront.Execute(Clipper2Lib::ClipType::Intersection, Clipper2Lib::FillRule::NonZero, solutionFront);
+    
+    // Area lateral
+    Clipper2Lib::Path64 clipPolygonLat;
+    clipPolygonLat.push_back({ (int64_t)0, numeric_limits<int64_t>::min() / 2 });
+    clipPolygonLat.push_back({ numeric_limits<int64_t>::max() / 2, numeric_limits<int64_t>::min() / 2 });
+    clipPolygonLat.push_back({ numeric_limits<int64_t>::max() / 2, numeric_limits<int64_t>::max() / 2 });
+    clipPolygonLat.push_back({ (int64_t)0, numeric_limits<int64_t>::max() / 2 });
+    
+    Clipper2Lib::Clipper64 clipperLat;
+    clipperLat.AddSubject(projectedLat);
+    clipperLat.AddClip(Clipper2Lib::Paths64{ clipPolygonLat });
+
+    Clipper2Lib::Paths64 solutionLat;
+    clipperLat.Execute(Clipper2Lib::ClipType::Intersection, Clipper2Lib::FillRule::NonZero, solutionLat);
+    
+    // Geometric front center
+    for (const auto& poly : solutionFront)
+    {
+        double area_poly = Clipper2Lib::Area(poly) / scale2;
+        if (area_poly < 1e-12) continue;
+
+        double cx_poly = 0.0;
+        double cy_poly = 0.0;
+
+        int n = (int)poly.size();
+        for (int i = 0; i < n; ++i)
+        {
+            int j = (i + 1) % n;
+            double xi = (double)poly[i].x / scale;
+            double yi = (double)poly[i].y / scale;
+            double xj = (double)poly[j].x / scale;
+            double yj = (double)poly[j].y / scale;
+
+            double factor = (xi * yj - xj * yi);
+            cx_poly += (xi + xj) * factor;
+            cy_poly += (yi + yj) * factor;
+        }
+
+        cx_poly /= (6.0 * area_poly);
+        cy_poly /= (6.0 * area_poly);
+
+        AreaFrontCenter.y += cx_poly * area_poly;
+        AreaFrontCenter.z += cy_poly * area_poly;
+        AreaFront += area_poly;
+    }
+    if (AreaFront > 0)
+    {
+        AreaFrontCenter.y /= AreaFront;
+        AreaFrontCenter.z /= AreaFront;
+    }
+
+    // Geometric lateral center
+    for (const auto& poly : solutionLat)
+    {
+        double area_poly = Clipper2Lib::Area(poly) / (scale * scale);
+        if (area_poly < 1e-12) continue;
+
+        double cx_poly = 0.0;
+        double cy_poly = 0.0;
+
+        int n = (int)poly.size();
+        for (int i = 0; i < n; ++i)
+        {
+            int j = (i + 1) % n;
+            double xi = (double)poly[i].x / scale;
+            double yi = (double)poly[i].y / scale;
+            double xj = (double)poly[j].x / scale;
+            double yj = (double)poly[j].y / scale;
+
+            double factor = (xi * yj - xj * yi);
+            cx_poly += (xi + xj) * factor;
+            cy_poly += (yi + yj) * factor;
+        }
+
+        cx_poly /= (6.0 * area_poly);
+        cy_poly /= (6.0 * area_poly);
+
+        AreaLatCenter.x += cx_poly * area_poly;
+        AreaLatCenter.y += cy_poly * area_poly;
+        AreaLat += area_poly;
+    }
+    if (AreaLat > 0)
+    {
+        AreaLatCenter.x /= AreaLat;
+        AreaLatCenter.y /= AreaLat;
+    }
+    //cout << "total_area_front : " << AreaFront << "  ";
+    //PrintGlmVec3(AreaFrontCenter);
+    //cout << "total_area_lat : " << AreaLat << "  ";
+    //PrintGlmVec3(AreaLatCenter);
+    //cout << endl;
 }
 void Ship::InitInertia()
 {
-    mVolume = 0.0f;
-    Ixx = 0.0f;
+    mVolume = 0.0f; // m3
+    Ixx = 0.0f;     // kg.m2
     Iyy = 0.0f;
     Izz = 0.0f;
     Ixy = 0.0f;
@@ -272,29 +417,26 @@ void Ship::InitInertia()
     // Calculation of total volume and moments of inertia
     for (const auto& tri : mvTris)
     {
-        vec3 p0 = mvVertices[tri.I[0]];
-        vec3 p1 = mvVertices[tri.I[1]];
-        vec3 p2 = mvVertices[tri.I[2]];
+        vec3 a = mvVertices[tri.I[0]];
+        vec3 b = mvVertices[tri.I[1]];
+        vec3 c = mvVertices[tri.I[2]];
 
-        float volume = std::abs(
-            (mCentroid.x - p2.x) * ((p0.y - p2.y) * (p1.z - p2.z) - (p1.y - p2.y) * (p0.z - p2.z)) -
-            (mCentroid.y - p2.y) * ((p0.x - p2.x) * (p1.z - p2.z) - (p1.x - p2.x) * (p0.z - p2.z)) +
-            (mCentroid.z - p2.z) * ((p0.x - p2.x) * (p1.y - p2.y) - (p1.x - p2.x) * (p0.y - p2.y))
-        ) / 6.0f;
+        // Calcul du volume signé de ce tétraèdre (méthode 1)
+        float volume = ( a.x * b.y * c.z + a.y * b.z * c.x + b.x * c.y * a.z - c.x * b.y * a.z - b.x * a.y * c.z - c.y * b.z * a.x ) / 6.0f;
         mVolume += volume;
 
-        Ixx += (p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
-        Iyy += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.z * p0.z + p1.z * p1.z + p2.z * p2.z + p0.z * p1.z + p1.z * p2.z + p2.z * p0.z) * volume / 10.0f;
-        Izz += (p0.x * p0.x + p1.x * p1.x + p2.x * p2.x + p0.x * p1.x + p1.x * p2.x + p2.x * p0.x + p0.y * p0.y + p1.y * p1.y + p2.y * p2.y + p0.y * p1.y + p1.y * p2.y + p2.y * p0.y) * volume / 10.0f;
-
-        Ixy += (2 * p0.x * p0.y + 2 * p1.x * p1.y + 2 * p2.x * p2.y + p0.x * p1.y + p0.x * p2.y + p1.x * p0.y + p1.x * p2.y + p2.x * p0.y + p2.x * p1.y) * volume / 20.0f;
-        Ixz += (2 * p0.x * p0.z + 2 * p1.x * p1.z + 2 * p2.x * p2.z + p0.x * p1.z + p0.x * p2.z + p1.x * p0.z + p1.x * p2.z + p2.x * p0.z + p2.x * p1.z) * volume / 20.0f;
-        Iyz += (2 * p0.y * p0.z + 2 * p1.y * p1.z + 2 * p2.y * p2.z + p0.y * p1.z + p0.y * p2.z + p1.y * p0.z + p1.y * p2.z + p2.y * p0.z + p2.y * p1.z) * volume / 20.0f;
+        // Calcul des moments d'inertie, comme précédemment
+        Ixx += (a.y * a.y + b.y * b.y + c.y * c.y + a.y * b.y + b.y * c.y + c.y * a.y + a.z * a.z + b.z * b.z + c.z * c.z + a.z * b.z + b.z * c.z + c.z * a.z) * volume / 10.0f;
+        Iyy += (a.x * a.x + b.x * b.x + c.x * c.x + a.x * b.x + b.x * c.x + c.x * a.x + a.z * a.z + b.z * b.z + c.z * c.z + a.z * b.z + b.z * c.z + c.z * a.z) * volume / 10.0f;
+        Izz += (a.x * a.x + b.x * b.x + c.x * c.x + a.x * b.x + b.x * c.x + c.x * a.x + a.y * a.y + b.y * b.y + c.y * c.y + a.y * b.y + b.y * c.y + c.y * a.y) * volume / 10.0f;
+        Ixy += (2 * a.x * a.y + 2 * b.x * b.y + 2 * c.x * c.y + a.x * b.y + a.x * c.y + b.x * a.y + b.x * c.y + c.x * a.y + c.x * b.y) * volume / 20.0f;
+        Ixz += (2 * a.x * a.z + 2 * b.x * b.z + 2 * c.x * c.z + a.x * b.z + a.x * c.z + b.x * a.z + b.x * c.z + c.x * a.z + c.x * b.z) * volume / 20.0f;
+        Iyz += (2 * a.y * a.z + 2 * b.y * b.z + 2 * c.y * c.z + a.y * b.z + a.y * c.z + b.y * a.z + b.y * c.z + c.y * a.z + c.y * b.z) * volume / 20.0f;
     }
-
+   
     if (mVolume != 0.0f)
     {
-        // Calculation of density
+        // Calculation of density (mass in kg, volume in m3)
         float densite = mMass / mVolume;
 
         // Adjustment of moments of inertia relative to the barycenter
@@ -308,6 +450,7 @@ void Ship::InitInertia()
 
 #ifdef PROPERTIES
     // Displaying results
+    cout << "Volume : " << mVolume << " m3" << endl;
     cout << "============================" << endl;
     cout << "Moments d'inertie volumiques" << endl;
     cout << "Volume total : " << mVolume << " m3" << endl;
@@ -393,6 +536,9 @@ void Ship::InitContours()
 {
     // Contour
     vector<vec3> contour = ComputeContour();    // Intersect the mesh with the ocean (Y = 0)
+    if (contour.size() == 0)
+        return;
+
     contour = ArrangeContour(contour);          // Sort the points
     CreateContourVAO1(contour);                 // Create the first contour which has the size of the ship
 
@@ -407,19 +553,25 @@ void Ship::InitShaders()
 {
     // Shaders for the ship
     mShaderHullColored = make_unique<Shader>("Resources/Ship/hull_colored.vert", "Resources/Ship/hull_colored.frag");       // For the hull (colored triangles for Archimede)
-    mShaderWireframe = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag", "Resources/Shaders/unicolor.geom");
-    mShaderPressure = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");            // For the forces of pressure (lines)
-    mShaderCamera = make_unique<Shader>("Resources/Shaders/camera.vert", "Resources/Shaders/camera.frag");                  // For the ship (the camera is the sun)
-    mShaderShip = make_unique<Shader>("Resources/Ship/ship.vert", "Resources/Ship/ship.frag");                              // Enhanced shader for the ship model
-    mShaderUnicolor = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");            // For bounding box & contours
+    mShaderWireframe = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag", "Resources/Misc/unicolor.geom");
+    mShaderPressure = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");                  // For the forces of pressure (lines)
+    mShaderCamera = make_unique<Shader>("Resources/Misc/camera.vert", "Resources/Misc/camera.frag");                        // For the ship (the camera is the sun)
+    mShaderShipShadow = make_unique<Shader>("Resources/Ship/ship_shadow.vert", "Resources/Ship/ship_shadow.frag");          // Enhanced shader for the ship model
+    mShaderShip = make_unique<Shader>("Resources/Ship/ship.vert", "Resources/Ship/ship.frag");
+    mShaderUnicolor = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");                  // For bounding box & contours
     mShaderNavLight = make_unique<Shader>("Resources/Ship/ship_light.vert", "Resources/Ship/ship_light.frag");              // For the navigation lights of the ship
+    mShaderShadow = make_unique<Shader>("Resources/Ship/shadow.vert", "Resources/Ship/shadow.frag");                        // For the shadow depth map
+
+    mShaderShipShadow->use();
+    mShaderShipShadow->setInt("texture_diffuse1", 1);
+    mShaderShipShadow->setInt("shadowMap", 2);
 
     // Shaders for the wake
     mShaderBuffer = make_unique<Shader>("Resources/Ship/wake_buffer.vert", "Resources/Ship/wake_buffer.frag");              // Wake as an accumulation buffer
     mShaderWakeVaoToTex = make_unique<Shader>("Resources/Ship/wake_vao.vert", "Resources/Ship/wake_vao.frag");              // Wake as a projection of VAO on texture
     mShaderGaussH = make_unique<Shader>("Resources/Ship/wake_gauss.vert", "Resources/Ship/wake_gauss_h.frag");              // Gaussian blur - horizontal pass (1)
     mShaderGaussV = make_unique<Shader>("Resources/Ship/wake_gauss.vert", "Resources/Ship/wake_gauss_v.frag");              // Gaussian blur - vertical pass (2)
-    mShaderWakeVao = make_unique<Shader>("Resources/Shaders/unicolor.vert", "Resources/Shaders/unicolor.frag");             // For the drawing of the vao (as a debug)
+    mShaderWakeVao = make_unique<Shader>("Resources/Misc/unicolor.vert", "Resources/Misc/unicolor.frag");             // For the drawing of the vao (as a debug)
 }
 void Ship::InitTextures()
 {
@@ -510,6 +662,30 @@ void Ship::InitTextures()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // S H A D O W ===========================================================
+    
+    glGenFramebuffers(1, &FBO_SHADOW);
+    glGenTextures(1, &TexShadowMap);
+    glBindTexture(GL_TEXTURE_2D, TexShadowMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_SIZE, SHADOW_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_SHADOW);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexShadowMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        cout << "Error creating FBO for the Shadow pass" << endl;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     // Create environment map
     mTexEnvironment = make_unique<Texture>();
     mTexEnvironment->CreateFromDDSFile("Resources/Ocean/ocean_env.dds");
@@ -533,19 +709,28 @@ void Ship::InitVaoWake()
 }
 void Ship::InitModels()
 {
-    // Models
-    mModelFull = make_unique<Model>(ship.PathnameFull);
+    // The ship
     stringstream ssFull;
-    ssFull << mModelFull->totalVertices << " vertices & " << mModelFull->totalFaces << " faces" << endl;
+    ssFull << mModelFull->NbVertices << " vertices & " << mModelFull->NbFaces << " faces" << endl;
     InfoFull = ssFull.str();
-    mPropeller = make_unique<Model>(ship.PathnamePropeller);
-    mRudder = make_unique<Model>(ship.PathnameRudder);
-    mRadar1 = make_unique<Model>(ship.PathnameRadar1);
-    if (ship.nRadar > 1)
+    if (ship.PathnamePropeller1.length())
+        mPropeller1 = make_unique<Model>(ship.PathnamePropeller1);
+    if (ship.PathnamePropeller2.length())
+        mPropeller2 = make_unique<Model>(ship.PathnamePropeller2);
+    if (ship.PathnameRudder.length())
+        mRudder = make_unique<Model>(ship.PathnameRudder);
+    if (ship.PathnameRadar1.length())
+        mRadar1 = make_unique<Model>(ship.PathnameRadar1);
+    if (ship.nRadar > 1 && ship.PathnameRadar2.length())
         mRadar2 = make_unique<Model>(ship.PathnameRadar2);
+    if (ship.bFlag)
+    {
+        float spacing = ship.DimXFlag / 15.0f;
+        mFlag = make_unique<Flag>(15, 10, spacing, ship.PathnameFlag.c_str());
+    }
 
-    sBBvec3 bb = mModelFull->calculateBoundingBox();
-    BBoxShape = make_unique<BBox>(bb.min, bb.max);
+    // Others
+    BBoxShape = make_unique<BBox>(mBbox.min, mBbox.max);
     BBoxShape->bVisible = false;
     mForceVector = make_unique<Cube>();
     mForceApplication = make_unique<Sphere>(0.1f, 16);
@@ -557,13 +742,28 @@ void Ship::InitSounds(Camera& camera)
     // Sounds
     g_SoundMgr->setListenerPosition(camera.GetPosition());
     g_SoundMgr->setListenerOrientation(camera.GetAt(), camera.GetUp());
-    mSoundPower = make_unique<Sound>(ship.ThrustSound);
-    mSoundPower->setVolume(0.25f);
-    mSoundPower->setPosition(ship.Position + ship.PosPower);
-    mSoundPower->setLooping(true);
-    mSoundPower->adjustDistances();
+    
+    // Power 1
+    mSoundThrust1 = make_unique<Sound>(ship.ThrustSound);
+    mSoundThrust1->setVolume(0.25f);
+    mSoundThrust1->setPosition(ship.Position + ship.PosPropeller1);
+    mSoundThrust1->setLooping(true);
+    mSoundThrust1->adjustDistances();
+ 
+    // Power 2
+    mSoundThrust2 = make_unique<Sound>(ship.ThrustSound);
+    mSoundThrust2->setVolume(0.25f);
+    mSoundThrust2->setPosition(ship.Position + ship.PosPropeller2);
+    mSoundThrust2->setLooping(true);
+    mSoundThrust2->adjustDistances();
+    
     if (bSound)
-        mSoundPower->play();
+    {
+        mSoundThrust1->play();
+        mSoundThrust2->play();
+    }
+
+    // Bow thruster
     if (ship.HasBowThruster)
     {
         mSoundBowThruster = make_unique<Sound>(ship.BowThrusterSound);
@@ -571,6 +771,16 @@ void Ship::InitSounds(Camera& camera)
         mSoundBowThruster->setPosition(ship.Position + ship.PosBowThruster);
         mSoundBowThruster->setLooping(true);
         mSoundBowThruster->adjustDistances();
+    }
+
+    // Stern thruster
+    if (ship.HasSternThruster)
+    {
+        mSoundSternThruster = make_unique<Sound>(ship.SternThrusterSound);
+        mSoundSternThruster->setVolume(0.25f);
+        mSoundSternThruster->setPosition(ship.Position + ship.PosSternThruster);
+        mSoundSternThruster->setLooping(true);
+        mSoundSternThruster->adjustDistances();
     }
 }
 void Ship::InitSmoke()
@@ -618,7 +828,7 @@ void FilterClosePoints(std::vector<sSprayPt>& pts)
     filtered.reserve(pts.size());
 
     filtered.push_back(pts[0]); // toujours garder le premier point
-    glm::vec3 lastPos = pts[0].p;
+    vec3 lastPos = pts[0].p;
 
     for (size_t i = 1; i < pts.size(); ++i)
     {
@@ -727,7 +937,7 @@ void Ship::InitSpray(vector<vec3>& contour)
     }
 }
 
-GLuint	Ship::GetTraceID() 
+GLuint Ship::GetTraceID() 
 { 
 #ifdef TRACE
     if (mTexTrace[mTraceIdx])
@@ -775,7 +985,6 @@ void Ship::UpdateTrace()
 
     mTraceIdx = 1 - mTraceIdx;
 }
-
 
 // Contour
 vector<vec3> Ship::ComputeContour()
@@ -923,6 +1132,7 @@ vector<vec3> Ship::OffsetContour(const vector<vec3>& contour, float offset)
 bool isPointInPolygon(const vec2& pt, const vector<vec2>& contour2D)
 {
     // Tests if a point (x, z) is inside a polygon (ray algorithm)
+    
     // contour2D : vector<vec2> (x, z)
     
     bool inside = false;
@@ -962,25 +1172,12 @@ void Ship::CreateTexWake(const vector<vec3>& contour)
 
     vector<float> mask(TexContourShipW * TexContourShipH, 0.0f);
 
-    // Determines the actual boundaries of the contour
-    float minX = contour[0].x, maxX = contour[0].x;
-    float minZ = contour[0].z, maxZ = contour[0].z;
-    for (const auto& v : contour) 
-    {
-        minX = std::min(minX, v.x); maxX = std::max(maxX, v.x);
-        minZ = std::min(minZ, v.z); maxZ = std::max(maxZ, v.z);
-    }
+    float halfW = TexContourShipW / 2.0f;
+    float halfH = TexContourShipH / 2.0f;
 
-    // Calculating the offset to center the outline in the texture
-    float spanX = maxX - minX;
-    float spanZ = maxZ - minZ;
-    float offsetX = ((float)TexContourShipW - spanX) * 0.5f - minX;
-    float offsetZ = ((float)TexContourShipH - spanZ) * 0.5f - minZ;
-
-    // Projects the contour in 2D XZ and applies centering
     vector<vec2> contour2D;
     for (const auto& v : contour)
-        contour2D.emplace_back(v.x + offsetX, v.z + offsetZ);
+        contour2D.emplace_back( v.x + halfW, v.z + halfH );
     
     float edgeWidth = 1.0f; // Épaisseur du contour adouci, en pixels
 
@@ -1117,6 +1314,27 @@ vec3 Ship::GetVerticeAtMeshIndex(int x, int z)
     pos.z = mvWaterPos[zz][xx].z + j * mOcean->PATCH_SIZE + pDisplacement[index + 2];
 
     return pos;
+}
+bool InterpolateTriangle(const vec3& p1, const vec3& p2, const vec3& p3, vec3& pos)
+{
+    // Calculation of barycentric coordinates
+    float det = ((p2.z - p3.z) * (p1.x - p3.x) + (p3.x - p2.x) * (p1.z - p3.z));
+    float w1 = ((p2.z - p3.z) * (pos.x - p3.x) + (p3.x - p2.x) * (pos.z - p3.z)) / det;
+    float w2 = ((p3.z - p1.z) * (pos.x - p3.x) + (p1.x - p3.x) * (pos.z - p3.z)) / det;
+    float w3 = 1.0f - w1 - w2;
+
+    // Check if the point is inside the triangle
+    if (w1 >= 0 && w2 >= 0 && w3 >= 0 && w1 <= 1 && w2 <= 1 && w3 <= 1)
+    {
+        // Interpolation of the y value
+        pos.y = w1 * p1.y + w2 * p2.y + w3 * p3.y;
+        return true;
+    }
+    else
+    {
+        // The point is outside the triangle
+        return false;
+    }
 }
 int Ship::GetHeightFast(vec3& pos)
 {
@@ -1301,15 +1519,27 @@ void Ship::UpdateWorldMatrix()
 }
 void Ship::ResetVelocities()
 {
-    YawRate = 0.0f;
     Pitch = 0.0f;
     Roll = 0.0f;
     
-    HeaveVelocity = 0.0f;
-    SurgeVelocity = 0.0f;
+    PitchCouple = 0.0f;
+    RollCouple = 0.0f;
+    PitchAcceleration = 0.0f;
+    RollAcceleration = 0.0f;
     PitchVelocity = 0.0f;
     RollVelocity = 0.0f;
+    HeaveAcceleration = 0.0f;
+    HeaveVelocity = 0.0f;
+    SurgeAcceleration = 0.0f;
+    SurgeVelocity = 0.0f;
+    YawAcceleration = 0.0f;
+    YawVelocity = 0.0f;
+    WindAcceleration = 0.0f;
+    WindVelocity = 0.0f;
+    LinearVelocity = 0.0f;
     DriftVelocity = 0.0f;
+    DriftAngleDeg = 0.0f;
+    Velocity = 0.0f;
 }
 void Ship::TransformVertices()
 {
@@ -1387,8 +1617,12 @@ void Ship::GetTrisUnderWater()
     glBindBuffer(GL_ARRAY_BUFFER, mVboHull);
     glBufferSubData(GL_ARRAY_BUFFER, 0, mvVertexColored.size() * sizeof(float), mvVertexColored.data());
 }
+sBBvec3 Ship::GetBoundingBox()
+{
+    return mBbox;
+}
 
-// True Kelvin wake
+// Creation of all the Kelvin wake textures 
 constexpr int IMAGE_HEIGHT = 1024;
 constexpr int IMAGE_WIDTH = 512;
 constexpr int IMAGE_WIDTH_2SIDES = 2 * IMAGE_WIDTH;
@@ -1429,8 +1663,6 @@ float integrate(std::function<float(float)> f, float a, float b, int n = 1000)
 }
 float surface_displacement(float x_tilde, float y_tilde, float froude_nbr)
 {
-    // surface_displacement
-
     // Rotation 90 degrés
     std::swap(x_tilde, y_tilde);
 
@@ -1449,7 +1681,13 @@ void wake_simulation(float froude_nbr, vector<float>& buffer)
     buffer.resize(IMAGE_HEIGHT * IMAGE_WIDTH);
 
     float subpixel_nbr = IMAGE_HEIGHT / MAX_Y_TILDE;
-    int y_offset = -44;// static_cast<int>(IMAGE_HEIGHT * 0.05f); // ex: offset vertical
+    int y_offset = 0;// static_cast<int>(IMAGE_HEIGHT * 0.05f); // ex: offset vertical (-44, -22)
+
+    int x1 = 20, y1 = 1024 - 973;
+    int x2 = 160, y2 = 1024 - 1007;
+    y_offset = y1 + (y2 - y1) * (100.0f * froude_nbr - x1) / (x2 - x1);
+    y_offset = -y_offset;
+    //cout << int(100.0f * froude_nbr) << "  " << y_offset << endl;
 
     for (int y_img = 0; y_img < IMAGE_HEIGHT; ++y_img)
     {
@@ -1523,7 +1761,7 @@ void Ship::CreateKelvinImages()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 0, GL_RED, GL_FLOAT, nullptr);
     
-    for (int fr = 1; fr < 101; fr++)
+    for (int fr = 0; fr < 161; fr++)
     {
         vector<float> buffer;
         float froude = 0.01f * fr;
@@ -1552,13 +1790,12 @@ void Ship::CreateKelvinImages()
         }
 
         string name;
-        if (fr == 100)
-            name = "Outputs/Kelvin-1024_Fr-100.png";
+        if (fr > 99)
+            name = "Outputs/Kelvin-1024_Fr-" + to_string(fr) + ".png";
         else if (fr < 10)
             name = "Outputs/Kelvin-1024_Fr-00" + to_string(fr) + ".png";
         else
             name = "Outputs/Kelvin-1024_Fr-0" + to_string(fr) + ".png";
-
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 0, GL_RED, GL_FLOAT, buffer_two_sides.data());
         SaveTexture2D(kelvinTex3, IMAGE_WIDTH_2SIDES, IMAGE_HEIGHT, 1, GL_RED, name);
@@ -1568,6 +1805,8 @@ void Ship::CreateKelvinImages()
 // Update
 void Ship::Update(float time)
 {
+    UpdateSounds();
+    
     if (g_bPause)
         return;
 
@@ -1577,7 +1816,6 @@ void Ship::Update(float time)
     static float prevTime = 0.0f;
     float dt = time - prevTime;
     mDt = dt;
-    static float prevYaw = 0.0f;
 
     UpdateWorldMatrix();
 
@@ -1589,19 +1827,22 @@ void Ship::Update(float time)
     // Forces
     ComputeArchimede();
     ComputeGravity();
-    ComputeHeave(dt);
-    ComputeThrust(dt);
-    ComputeResistanceViscous(dt);
-    ComputeResistanceWaves(dt);
-    ComputeResistanceResidual(dt);
+    ComputeHeave();
+    ComputeThrust1(dt);
+    ComputeThrust2(dt);
+    ComputePropellersDrag();
+    ComputePropellersTorque();
+    ComputeResistanceViscous();
+    ComputeResistanceWaves();
+    ComputeResistanceResidual();
     ComputeBowThrust(dt);
+    ComputeSternThrust(dt);
     ComputeRudder(dt);
-    ComputeWind(dt);
-    ComputeCentrifugal(dt);
+    ComputeWind();
+    ComputeCentrifugal();
     // Result
     ComputeForces(dt);
    
-    UpdateSounds();
     UpdateSmoke(dt);
     UpdateSpray(dt);
     UpdateAutopilot(dt);
@@ -1618,10 +1859,6 @@ void Ship::Update(float time)
 #ifdef TRACE
     UpdateTrace();
 #endif
-
-    VariationYawSigned = (Yaw - prevYaw) / dt;
-    YawRate = fabs(Yaw - prevYaw) / dt;   // rad/s
-    prevYaw = Yaw;
 
     prevTime = time;
 }
@@ -1701,62 +1938,174 @@ void Ship::ComputeGravity()
     Gravity.Vector = vec3(0.0f, -Gravity.Magnitude, 0.0f);  // Always vertical
     Gravity.Position = TransformPosition(ship.PosGravity);
 }
-void Ship::ComputeHeave(float dt)
+void Ship::ComputeHeave()
 {
     // Force which resist to the couple Archimede / Gravity
-    ResistanceHeave.Magnitude = ship.HeavePerf * mMass * HeaveVelocity * AreaXZ_RacCub * AreaWetted / AreaWettedMax;
+    ResistanceHeave.Magnitude = ship.HeaveCoef * mMass * HeaveVelocity * AreaXZ_RacCub * AreaWetted / AreaWettedMax;
     if (Archimede.Magnitude > Gravity.Magnitude)    ResistanceHeave.Vector = TransformVector(vec3(0.0f, -ResistanceHeave.Magnitude, 0.0f));
     else                                            ResistanceHeave.Vector = TransformVector(vec3(0.0f, ResistanceHeave.Magnitude, 0.0f));
     ResistanceHeave.Position = Archimede.Position;
 }
-void Ship::ComputeThrust(float dt)
+void Ship::ComputeThrust1(float dt)
+{
+    if (ship.nPropeller == 1)
+        return;
+
+    // Force as a result of the engine and the propellers
+
+    float limitRpm1 = 0.0f;
+    if (PowerCurrentStep1 >= 0) limitRpm1 = ((float)PowerCurrentStep1 / (float)ship.PowerStepMax) * ship.PropRpmMax;
+    else                        limitRpm1 = ((float)PowerCurrentStep1 / (float)ship.PowerStepMax) * ship.PropRpmMax;
+
+    if (PropRpm1 < limitRpm1 - ship.PropRpmIncrement * dt)
+        PropRpm1 += ship.PropRpmIncrement * dt;
+    else if (PropRpm1 > limitRpm1 + ship.PropRpmIncrement * dt)
+        PropRpm1 -= ship.PropRpmIncrement * dt;
+
+    if (PropRpm1 >= 0) PowerApplied1 = mPowerW * PropRpm1 / ship.PropRpmMax;
+    else                PowerApplied1 = mPowerW * PropRpm1 / ship.PropRpmMax;
+
+    // Stop to 0 if close to zero and target is zero
+    if (PropRpm1 > -ship.PropRpmIncrement * dt && PropRpm1 < ship.PropRpmIncrement * dt)
+    {
+        PropRpm1 = 0.0f;
+        PowerApplied1 = 0.0f;
+    }
+
+    Thrust1.Magnitude = PowerApplied1;
+    Thrust1.Vector = TransformVector(vec3(Thrust1.Magnitude, 0.0f, 0.0f));
+    Thrust1.Position = TransformPosition(ship.PosPropeller1);
+}
+void Ship::ComputeThrust2(float dt)
 {
     // Force as a result of the engine and the propellers
 
-    float limitRpm = 0.0f;
-    if (PowerCurrentStep >= 0)  limitRpm =  ship.PowerRpmMin + ((float)PowerCurrentStep / (float)ship.PowerStepMax) * ((float)ship.PowerRpmMax - (float)ship.PowerRpmMin);
-    else                        limitRpm = -ship.PowerRpmMin + ((float)PowerCurrentStep / (float)ship.PowerStepMax) * ((float)ship.PowerRpmMax - (float)ship.PowerRpmMin);
+    float limitRpm2 = 0.0f;
+    if (PowerCurrentStep2 >= 0) limitRpm2 = ((float)PowerCurrentStep2 / (float)ship.PowerStepMax) * ship.PropRpmMax;
+    else                        limitRpm2 = ((float)PowerCurrentStep2 / (float)ship.PowerStepMax) * ship.PropRpmMax;
 
-    if (PowerRpm < limitRpm - ship.PowerRpmIncrement * dt)
-    {
-        PowerRpm += ship.PowerRpmIncrement * dt;
-        if (PowerRpm > -ship.PowerRpmMin && PowerRpm < ship.PowerRpmMin)
-            PowerRpm = ship.PowerRpmMin;
-    }
-    else if (PowerRpm > limitRpm + ship.PowerRpmIncrement * dt)
-    {
-        PowerRpm -= ship.PowerRpmIncrement * dt;
-        if (PowerRpm < ship.PowerRpmMin && PowerRpm > -ship.PowerRpmMin)
-            PowerRpm = -ship.PowerRpmMin;
-    }
+    if (PropRpm2 < limitRpm2 - ship.PropRpmIncrement * dt)
+        PropRpm2 += ship.PropRpmIncrement * dt;
+    else if (PropRpm2 > limitRpm2 + ship.PropRpmIncrement * dt)
+        PropRpm2 -= ship.PropRpmIncrement * dt;
 
-    if (PowerRpm >= 0)  PowerApplied = mPowerW * (PowerRpm - ship.PowerRpmMin) / (ship.PowerRpmMax - ship.PowerRpmMin);
-    else                PowerApplied = mPowerW * (PowerRpm + ship.PowerRpmMin) / (ship.PowerRpmMax - ship.PowerRpmMin);
+    if (PropRpm2 >= 0) PowerApplied2 = mPowerW * PropRpm2 / ship.PropRpmMax;
+    else                PowerApplied2 = mPowerW * PropRpm2 / ship.PropRpmMax;
 
     // Stop to 0 if close to zero and target is zero
-    if (PowerRpm > -ship.PowerRpmIncrement * dt && PowerRpm < ship.PowerRpmIncrement * dt)
+    if (PropRpm2 > -ship.PropRpmIncrement * dt && PropRpm2 < ship.PropRpmIncrement * dt)
     {
-        PowerRpm = 0.0f;
-        PowerApplied = 0.0f;
+        PropRpm2 = 0.0f;
+        PowerApplied2 = 0.0f;
     }
 
-    Thrust.Magnitude = PowerApplied * ship.PowerPerf;
-    Thrust.Vector = TransformVector(vec3(Thrust.Magnitude, 0.0f, 0.0f));
-    Thrust.Position = TransformPosition(ship.PosPower);
-
-    mSoundPower->setPitch(1.0f + 0.25f * fabs(PowerApplied) / mPowerW);
-    if (g_Camera.GetPosition().y < 0.0f)
-        mSoundPower->setVolume(0.01f + 0.25f * fabs(PowerApplied) / mPowerW);
-    else
-        mSoundPower->setVolume(0.25f + 0.25f * fabs(PowerApplied) / mPowerW);
+    Thrust2.Magnitude = PowerApplied2;
+    Thrust2.Vector = TransformVector(vec3(Thrust2.Magnitude, 0.0f, 0.0f));
+    Thrust2.Position = TransformPosition(ship.PosPropeller2);
 }
-void Ship::ComputeResistanceViscous(float dt) 
+void Ship::ComputePropellersDrag()
 {
-    // Reynolds number
+    static float SurgeVelocityPrevious = 0.0f;
+    static float S = M_PI * 0.25f * ship.PropDiameter * ship.PropDiameter;
+    float Cx = 1.0f; // disc drag coefficient for blocked or dragging propeller
+
+    // Propeller 1 ======================
+    
+    float drag1 = 0.0f;
+
+    // Apply brake if current speed is positive and previous was higher (deceleration)
+    if ((SurgeVelocity > 0.0f && SurgeVelocityPrevious > SurgeVelocity + 0.1f) || (SurgeVelocity < 0.0f && SurgeVelocityPrevious < SurgeVelocity - 0.1f))
+    {
+        drag1 = 0.5f * mWATER_DENSITY * Cx * S * SurgeVelocity * fabs(SurgeVelocity);
+        drag1 = -copysign(drag1, SurgeVelocity);
+    }
+    // If opposite impulse, apply an additional brake according to the power
+    else if ((SurgeVelocity > 0.0f && PropRpm1 < 0.0f) || (SurgeVelocity < 0.0f && PropRpm1 > 0.0f))
+    {
+        float max_drag = 0.5f * mWATER_DENSITY * Cx * S * SurgeVelocity * fabs(SurgeVelocity);
+        if (fabs(PowerApplied1) < fabs(max_drag))
+            drag1 = -copysign(max_drag - fabs(PowerApplied1), SurgeVelocity);
+    }
+
+    PropDrag1.Magnitude = drag1;
+    PropDrag1.Vector = TransformVector(vec3(drag1, 0.0f, 0.0f));
+    PropDrag1.Position = TransformPosition(ship.PosPropeller1);
+
+    // Propeller 2 ======================
+    
+    float drag2 = 0.0f;
+
+    if ((SurgeVelocity > 0.0f && SurgeVelocityPrevious > SurgeVelocity + 0.1f) || (SurgeVelocity < 0.0f && SurgeVelocityPrevious < SurgeVelocity - 0.1f))
+    {
+        drag2 = 0.5f * mWATER_DENSITY * Cx * S * SurgeVelocity * fabs(SurgeVelocity);
+        drag2 = -copysign(drag2, SurgeVelocity);
+    }
+    else if ((SurgeVelocity > 0.0f && PropRpm2 < 0.0f) || (SurgeVelocity < 0.0f && PropRpm2 > 0.0f))
+    {
+        float max_drag = 0.5f * mWATER_DENSITY * Cx * S * SurgeVelocity * fabs(SurgeVelocity);
+        if (fabs(PowerApplied2) < fabs(max_drag))
+            drag2 = -copysign(max_drag - fabs(PowerApplied2), SurgeVelocity);
+    }
+
+    PropDrag2.Magnitude = drag2;
+    PropDrag2.Vector = TransformVector(vec3(drag2, 0.0f, 0.0f));
+    PropDrag2.Position = TransformPosition(ship.PosPropeller2);
+
+    SurgeVelocityPrevious = SurgeVelocity;
+}
+void Ship::ComputePropellersTorque()
+{
+    // Propeller 1 ======================
+
+    PropTorque1.Magnitude = 0.0f;
+    if (ship.nPropeller == 2)
+    {
+        // Vitesse angulaire en rad/s
+        float omega = (2.0f * M_PI * fabs(PropRpm1)) / 60.0f;
+
+        if (omega > 1e-3f) // Pour éviter division par zéro
+        {
+            // Calcul du couple, signe inverse de la RPM car réaction
+            float torqueMagnitude = fabs(PowerApplied1) / omega;
+            float torqueSign = (PropRpm1 >= 0) ? 1.0f : -1.0f;
+
+            PropTorque1.Magnitude = 20.0f * torqueSign * torqueMagnitude * ship.PropTorque1;
+        }
+
+        // Le vecteur torque autour de l'axe X longitudinal (ex : vecteur vers tribord au sens inverse)
+        PropTorque1.Vector = TransformVector(vec3(0.0f, 0.0f, PropTorque1.Magnitude));
+        PropTorque1.Position = TransformPosition(ship.PosPropeller1);
+    }
+
+    // Propeller 2 ======================
+    
+    PropTorque2.Magnitude = 0.0f;
+    float omega = (2.0f * M_PI * fabs(PropRpm2)) / 60.0f;
+
+    if (omega > 1e-3f) // Pour éviter division par zéro
+    {
+        // Calcul du couple, signe inverse de la RPM car réaction
+        float torqueMagnitude = fabs(PowerApplied2) / omega;
+        float torqueSign = (PropRpm2 >= 0) ? 1.0f : -1.0f;
+
+        PropTorque2.Magnitude = 20.0f * torqueSign * torqueMagnitude * ship.PropTorque2;
+    }
+
+    // Le vecteur torque autour de l'axe X longitudinal (ex : vecteur vers tribord au sens inverse)
+    PropTorque2.Vector = TransformVector(vec3(0.0f, 0.0f, PropTorque2.Magnitude));
+    PropTorque2.Position = TransformPosition(ship.PosPropeller2);
+}
+void Ship::ComputeResistanceViscous() 
+{
+    // Reynolds number (ITTC-1957)
     float Re = (fabs(SurgeVelocity) * LWL) / mKINEMATIC_VISCOSITY;
 
-    // Viscous resistance coefficient
-    float Cv = 0.075f / pow(log10(Re) - 2.0f, 2);
+    // Friction coefficient (ITTC-1957)
+    float Cf = 0.075f / pow(log10(Re) - 2.0f, 2);
+
+    // Form factor
+    float k_form = 0.2f;
+    float Cv = Cf * (1.0f + k_form);
 
     // Viscous resistance (in Newtons)
     float resVisc = 0.5f * mWATER_DENSITY * AreaWetted * pow(fabs(SurgeVelocity), 2) * Cv;
@@ -1771,7 +2120,7 @@ void Ship::ComputeResistanceViscous(float dt)
     ResistanceViscous.Vector = TransformVector(vec3(ResistanceViscous.Magnitude, 0.0f, 0.0f));
     ResistanceViscous.Position = Archimede.Position;
 }
-void Ship::ComputeResistanceWaves(float dt)
+void Ship::ComputeResistanceWaves()
 {
     // Froude number
     float Fn = fabs(SurgeVelocity) / sqrt(mGRAVITY * LWL);
@@ -1786,18 +2135,45 @@ void Ship::ComputeResistanceWaves(float dt)
 
     // Wave resistance (in Newtons)
     float resWav = 0.5f * mWATER_DENSITY * AreaWetted * pow(fabs(SurgeVelocity), 2) * Cw;
+   
     if (isnan(resWav))
         resWav = 0.0f;
+
+    if (SurgeVelocity < 0.0f)
+        resWav *= 5.0f;
 
     ResistanceWaves.Magnitude = -Sign(SurgeVelocity) * resWav;   // Against the speed
     ResistanceWaves.Vector = TransformVector(vec3(ResistanceWaves.Magnitude, 0.0f, 0.0f));
     ResistanceWaves.Position = Archimede.Position;
 }
-void Ship::ComputeResistanceResidual(float dt)
+void Ship::ComputeResistanceResidual()
 {
-    // Force at the start of a movement
-    if(SurgeVelocity > 0.0001f || SurgeVelocity < 0.0001f)  ResistanceResidual.Magnitude = -Sign(SurgeVelocity) * (mMass / 150.f);   // Against the speed
-    else                                                    ResistanceResidual.Magnitude = 0.0f; // No speed, no resistance
+    if (SurgeVelocity < -0.1f || SurgeVelocity > 0.1f)
+    {
+        ResistanceResidual.Magnitude = 0.0f;
+        ResistanceResidual.Vector = TransformVector(vec3(ResistanceResidual.Magnitude, 0.0f, 0.0f));
+        ResistanceResidual.Position = Archimede.Position;
+        return;
+    }
+
+    // Frottement résiduel (toujours là, même à vitesse très faible)
+    
+    float hullFrictionCoeff = 0.4f;
+    switch (ship.Class)
+    {
+    case eClass::FastBoat:      hullFrictionCoeff = 0.70f; break;
+    case eClass::Corvette:      hullFrictionCoeff = 0.55f; break;
+    case eClass::Frigate:       hullFrictionCoeff = 0.45f; break;
+    case eClass::Fishing:       hullFrictionCoeff = 0.45f; break;
+    case eClass::Submarine:     hullFrictionCoeff = 0.35f; break;
+    case eClass::Ferry:         hullFrictionCoeff = 0.40f; break;
+    case eClass::Tugboat:       hullFrictionCoeff = 0.35f; break;
+    case eClass::Cargo:         hullFrictionCoeff = 0.35f; break;
+    case eClass::Supertanker:   hullFrictionCoeff = 0.25f; break;
+    }
+    float residualFriction = mWATER_DENSITY * hullFrictionCoeff * SurgeVelocity * AreaWetted;    // proportionnel à V directement
+    
+    ResistanceResidual.Magnitude = -Sign(SurgeVelocity) * residualFriction;   // Against the speed
     ResistanceResidual.Vector = TransformVector(vec3(ResistanceResidual.Magnitude, 0.0f, 0.0f));
     ResistanceResidual.Position = Archimede.Position;
 }
@@ -1834,6 +2210,39 @@ void Ship::ComputeBowThrust(float dt)
     else
         mSoundBowThruster->setVolume(0.25f + 0.25f * fabs(BowThrusterApplied) / ship.BowThrusterPowerW);
 }
+void Ship::ComputeSternThrust(float dt)
+{
+    if (!ship.HasSternThruster)
+        return;
+
+    // Force as a result of the stern thruster
+
+    float limitRpm = 0.0f;
+    if (SternThrusterCurrentStep >= 0)
+        limitRpm = ship.SternThrusterRpmMin + ((float)SternThrusterCurrentStep / (float)ship.SternThrusterStepMax) * ((float)ship.SternThrusterRpmMax - (float)ship.SternThrusterRpmMin);
+    else
+        limitRpm = -ship.SternThrusterRpmMin + ((float)SternThrusterCurrentStep / (float)ship.SternThrusterStepMax) * ((float)ship.SternThrusterRpmMax - (float)ship.SternThrusterRpmMin);
+
+    if (SternThrusterRpm < limitRpm - ship.SternThrusterRpmIncrement * dt)      SternThrusterRpm += ship.SternThrusterRpmIncrement * dt;
+    else if (SternThrusterRpm > limitRpm + ship.SternThrusterRpmIncrement * dt) SternThrusterRpm -= ship.SternThrusterRpmIncrement * dt;
+
+    if (SternThrusterRpm >= 0)    SternThrusterApplied = ship.SternThrusterPowerW * (SternThrusterRpm - ship.SternThrusterRpmMin) / (ship.SternThrusterRpmMax - ship.SternThrusterRpmMin);
+    else                        SternThrusterApplied = ship.SternThrusterPowerW * (SternThrusterRpm + ship.SternThrusterRpmMin) / (ship.SternThrusterRpmMax - ship.SternThrusterRpmMin);
+
+    // Stop to 0 if close to zero and target is zero
+    if (SternThrusterRpm > -ship.SternThrusterRpmIncrement * dt && SternThrusterRpm < ship.SternThrusterRpmIncrement * dt)
+        SternThrusterRpm = 0.0f;
+
+    SternThrust.Magnitude = SternThrusterApplied * ship.SternThrusterPerf;
+    SternThrust.Vector = TransformVector(vec3(0.0f, 0.0f, SternThrust.Magnitude));
+    SternThrust.Position = TransformPosition(ship.PosSternThruster);
+
+    mSoundSternThruster->setPitch(1.0f + 0.5f * fabs(SternThrusterApplied) / ship.SternThrusterPowerW);
+    if (g_Camera.GetPosition().y < 0.0f)
+        mSoundSternThruster->setVolume(0.01f + 0.25f * fabs(SternThrusterApplied) / ship.SternThrusterPowerW);
+    else
+        mSoundSternThruster->setVolume(0.25f + 0.25f * fabs(SternThrusterApplied) / ship.SternThrusterPowerW);
+}
 void Ship::ComputeRudder(float dt)
 {
     // Rudder movement
@@ -1857,33 +2266,34 @@ void Ship::ComputeRudder(float dt)
     // Convert rudder angle to radians
     float angle = glm::radians(RudderAngleDeg);
 
-    // Rudder force
-    float velocity = 2.0f + fabs(SurgeVelocity);
-    float forceLift = 0.5f * mWATER_DENSITY * pow(velocity, 2) * mRudderArea * sin(angle) * 3.0f;
-
-    // Drag force
-    float forceDrag = fabs(0.5f * mWATER_DENSITY * pow(SurgeVelocity, 2) * mRudderArea * sin(angle));
+    // Force
+    float force = 0.5f * mWATER_DENSITY * pow(SurgeVelocity, 2) * mRudderArea * sin(angle) * ship.TurningPerf;
 
     // Lateral component (gyration of the ship)
-    RudderLift.Magnitude = Sign(SurgeVelocity) * forceLift * ship.RudderLiftPerf;
+    RudderLift.Magnitude = Sign(SurgeVelocity) * force;
     RudderLift.Vector = TransformVector(vec3(0.0f, 0.0f, RudderLift.Magnitude));
     RudderLift.Position = TransformPosition(ship.PosRudder);
 
-    // Axial component (slow the ship)
-    RudderDrag.Magnitude = -Sign(SurgeVelocity) * forceDrag * ship.RudderDragPerf;
+    // Axial component (slow the ship, function of the angle of the rudder)
+    float a = 0.1f; // min factor at 0°
+    float b = 1.0f; // max factor at 35°
+    float n = 3.0f; // controls the shape of the curve (bigger = smoother)
+    float x = fabs(RudderAngleDeg) / ship.RudderStepMax;
+    if (x > 1.0f) x = 1.0f;
+    float dragFactor = a + (b - a) * pow(x, n);
+    RudderDrag.Magnitude = -Sign(SurgeVelocity) * fabs(force) * dragFactor;
     RudderDrag.Vector = TransformVector(vec3(RudderDrag.Magnitude, 0.0f, 0.0f));
     RudderDrag.Position = TransformPosition(ship.PosRudder);
 }
-void Ship::ComputeWind(float dt)
+void Ship::ComputeWind()
 {
     // 2 forces, one on the forward half of the ship and the other on the aft half of the ship, 
+    
     // both exerting a thrust that causes the ship to drift and a turning force that brings the ship across to windward
-
-    float A = mLength * mAirDraft * 0.5f;
 
     // Angle between Wind and Heading (on horizontal plan XZ) (-0 to -180 = port wind, 0 to 180 = starboard wind)
     vec3 heading = TransformPosition(mBow) - ship.Position;
-    vec2 windXZ(g_Wind.x, g_Wind.y);
+    vec2 windXZ = g_Wind + vCOG;
     vec2 headingXZ(heading.x, heading.z);
     windXZ = glm::normalize(windXZ);
     headingXZ = glm::normalize(headingXZ);
@@ -1894,47 +2304,93 @@ void Ship::ComputeWind(float dt)
   
     // Between 0° and 90°: alpha is positive (from 0 to 1 then goes back down to 0), between 90° and 180°: alpha is negative (from 0 to -1 then goes back up to 0)
     float alpha = sin(2 * angle); 
-    float windSpeedMS = glm::length(vec2(g_Wind.x - vCOG.x, g_Wind.y - vCOG.y));
+   
+    float wind = glm::length(g_Wind);
+    WindApparent = glm::length(g_Wind + vCOG);
 
     // WIND ROTATION
-    WindRotation.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * A * pow(windSpeedMS, 2) * alpha;
+    WindRotation.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * AreaLat * pow(wind, 2) * alpha;
     WindRotation.Vector = TransformVector(vec3(0.0f, 0.0f, WindRotation.Magnitude));
-    WindRotation.Position = TransformPosition(vec3(mLength * 0.5f, 0.0f, 0.0f));
+    WindRotation.Position = TransformPosition(ship.AreaLatCenter);
 
-    // Emerging surface exposed to the wind
-    const float lateralArea = mLength * mAirDraft * 0.5f;
-    const float frontalArea = mWidth * mAirDraft * 0.5f;
     // Angle decomposition
     const float cosPhi = std::cos(angle);
     const float sinPhi = std::sin(angle);
     const float absCosPhi = std::abs(cosPhi);
     const float absSinPhi = std::abs(sinPhi);
+    
     // Directional factors
     const float frontFactor = (cosPhi >= 0.0f) ? 1.0f : 0.0f;
     const float rearFactor = (cosPhi <= 0.0f) ? 1.0f : 0.0f;
+
     // Projected areas
-    float frontProjectedArea = (0.5f * lateralArea * absSinPhi) + (frontalArea * absCosPhi * frontFactor);
-    float rearProjectedArea = (0.5f * lateralArea * absSinPhi) + (frontalArea * absCosPhi * rearFactor);
+    float frontAreaFrontProj = AreaFront * absCosPhi * frontFactor;
+    float rearAreaFrontProj = AreaFront * absCosPhi * rearFactor;
+    float latProj = AreaLat * absSinPhi;
 
-    // FRONT DRIFT
-    WindFront.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * frontProjectedArea * windSpeedMS * windSpeedMS * 0.5f;
-    WindFront.Vector = -WindFront.Magnitude * glm::normalize(vec3(g_Wind.x, 0.0f, g_Wind.y));
-    WindFront.Position = TransformPosition(vec3(mLength / 4.0f, mAirDraft * 0.25f, 0.0f));
+    float frontProjectedArea = 0.5f * latProj + frontAreaFrontProj;
+    float rearProjectedArea = 0.5f * latProj + rearAreaFrontProj;
 
-    // REAR DRIFT
-    WindRear.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * rearProjectedArea * windSpeedMS * windSpeedMS * 0.5f;
-    WindRear.Vector = -WindRear.Magnitude * glm::normalize(vec3(g_Wind.x, 0.0f, g_Wind.y));
-    WindRear.Position = TransformPosition(vec3(-mLength / 4.0f, mAirDraft * 0.25f, 0.0f));
+    // Forces
+    vec3 windNormalized = -glm::normalize(vec3(g_Wind.x, 0.0f, g_Wind.y));
+    WindFront.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * frontProjectedArea * wind * wind * 0.5f;
+    WindFront.Vector = WindFront.Magnitude * windNormalized;
+    WindFront.Position = TransformPosition(vec3((mBow.x + AreaLatCenter.x) * 0.5f, AreaLatCenter.y, 0.0f));
+
+    WindRear.Magnitude = 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * rearProjectedArea * wind * wind * 0.5f;
+    WindRear.Vector = WindRear.Magnitude * windNormalized;
+    WindRear.Position = TransformPosition(vec3((mStern.x + AreaLatCenter.x) * 0.5f, AreaLatCenter.y, 0.0f));
+
+    ResistanceAir.Magnitude = -(0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * frontProjectedArea + 0.5f * mAIR_DENSITY * mPLATE_DRAG_COEFF * rearProjectedArea) * WindApparent * WindApparent * 0.5f * cos(angle);
+    ResistanceAir.Magnitude *= 0.1f;
+    vec3 windAppNormalized = -glm::normalize(vec3(g_Wind.x + vCOG.x, 0.0f, g_Wind.y + vCOG.y));
+    ResistanceAir.Vector = ResistanceAir.Magnitude * windAppNormalized;
+    ResistanceAir.Position = TransformPosition(AreaLatCenter);
 }
-void Ship::ComputeCentrifugal(float dt)
+void Ship::ComputeCentrifugal()
 {
     // Centrifugal force during a turn that causes the ship to roll outward
 
-    float forceMagnitude = mMass * YawRate * ship.CentrifugalPerf;
-
-    Centrifugal.Magnitude = forceMagnitude;
-    Centrifugal.Vector = TransformVector(vec3(0.0f, 0.0f, forceMagnitude));
+    Centrifugal.Magnitude = mMass * fabs(YawVelocity) * ship.CentrifugalPerf;
+    Centrifugal.Vector = TransformVector(vec3(0.0f, 0.0f, Centrifugal.Magnitude));
     Centrifugal.Position = TransformPosition(ship.PosGravity);
+}
+float Ship::ComputePivotPosition()
+{
+    // Return a distance from the center, positive if forward, negative if backward
+    
+    // Max speed conversion (en m/s)
+    static float maxSpeed = KnotsToMS(ship.SpeedMaxKn);
+
+    float P0 = 0.5f * mLength;                      // Pivot point at standstill (center)
+    float alpha = 0.2f;                             // Climb parameter
+
+    float pivotPos = P0;
+
+    if (SurgeVelocity >= 0.0f)
+    {
+        // Positive speed case (forward)
+        float PmaxFwd = ship.PivotFwd * mLength;
+        pivotPos = P0 + (PmaxFwd - P0) * (1.0f - std::exp(-alpha * SurgeVelocity));
+        if (pivotPos < PmaxFwd)
+            pivotPos = PmaxFwd;
+        if (pivotPos > P0)
+            pivotPos = P0;
+        pivotPos = 0.5f * mLength - pivotPos;
+    }
+    else
+    {
+        // Negative speed case (rear)
+        float PmaxBwd = ship.PivotBwd * mLength;
+        pivotPos = P0 + (PmaxBwd - P0) * (1.0f - std::exp(-alpha * -SurgeVelocity));
+        if (pivotPos > PmaxBwd)
+            pivotPos = PmaxBwd;
+        if (pivotPos < P0)
+            pivotPos = P0;
+        pivotPos = 0.5f * mLength - pivotPos;
+    }
+
+    return pivotPos;
 }
 void Ship::ComputeForces(float dt)
 {
@@ -1968,20 +2424,18 @@ void Ship::ComputeForces(float dt)
     RollCouple = dx * sin(Yaw) + dz * cos(Yaw);
     float force = (Archimede.Magnitude + Gravity.Magnitude) * 0.5f;
 
-    float damping = 1.0f;
-
     // CoupleZ (tangage) (AG.x positive = the bow lowers)
     PitchAcceleration = 0.5f * PitchCouple * force / Izz;
-    //float asymmetryFactor = (PitchAcceleration > 0.0f) ? 1.0f : 0.3f;
-    PitchAcceleration -= PitchVelocity * damping;// *asymmetryFactor;
+    float asymmetryFactor = (PitchAcceleration > 0.0f) ? 1.0f : 0.3f;
+    PitchAcceleration -= PitchVelocity * asymmetryFactor;
     PitchVelocity += PitchAcceleration * dt;
     Pitch += PitchVelocity * dt;
 
     // CoupleX (roulis) (AG.z positive = list to starboard)
     RollAcceleration = 0.25f * -RollCouple * force / Ixx;
     if (SurgeVelocity != 0.0f)
-        RollAcceleration += Sign(VariationYawSigned) * Centrifugal.Magnitude / Ixx;
-    RollAcceleration -= RollVelocity * damping;
+        RollAcceleration += Sign(YawVelocity) * Centrifugal.Magnitude / Ixx;
+    RollAcceleration -= RollVelocity;
     RollVelocity += RollAcceleration * dt;
     Roll += RollVelocity * dt;
 
@@ -1990,20 +2444,66 @@ void Ship::ComputeForces(float dt)
     Roll = fmod(Roll, 2.0f * M_PI);
 
     // Propulsive force
-    float forceFWD = Thrust.Magnitude
+    float forceFWD = Thrust1.Magnitude + Thrust2.Magnitude
+        + PropDrag1.Magnitude + PropDrag2.Magnitude
         + ResistanceViscous.Magnitude
         + ResistanceWaves.Magnitude
         + ResistanceResidual.Magnitude
+        + ResistanceAir.Magnitude;
         + RudderDrag.Magnitude;
 
     // Mass of the ship is multiplied by 1.5 to simulate inertia (added displaced water)
-	SurgeAcceleration = forceFWD / (mMass * 1.5f);  
+	SurgeAcceleration = forceFWD / mMass;  
     
-    // Turning drag
-    float turningDrag = ship.TurningDragPerf * pow(SurgeVelocity, 2) * fabs(YawVelocity);
-    SurgeAcceleration -= turningDrag / mMass;
+    // Drift + Yaw drag ==================
+    
+    // Drift factor (lateral drift)
+    float driftFactor = pow(std::abs(std::sin(glm::radians(DriftAngleDeg))), 2.0f);
 
-    // Slam and Surge
+    // Pivot effect
+    float pivot = ComputePivotPosition();
+    float pivotFactorDrag = fabs(pivot) / (0.5f * mLength);
+
+    // Characteristic speed related to critical Froude
+    float Fr_crit = 0.25f; // 0.2 (large cargo ship), 0.3 (light ship), 0.35 (fast)
+    switch (ship.Class)
+    {
+    case eClass::FastBoat:      Fr_crit = 0.38f; break;
+    case eClass::Corvette:      Fr_crit = 0.32f; break;
+    case eClass::Frigate:       Fr_crit = 0.30f; break;
+    case eClass::Fishing:       Fr_crit = 0.30f; break;
+    case eClass::Submarine:     Fr_crit = 0.25f; break;
+    case eClass::Ferry:         Fr_crit = 0.25f; break;
+    case eClass::Tugboat:       Fr_crit = 0.24f; break;
+    case eClass::Cargo:         Fr_crit = 0.22f; break;
+    case eClass::Supertanker:   Fr_crit = 0.20f; break;
+    }
+    float Vc = Fr_crit * sqrt(mGRAVITY * mLength);
+
+    // Quadratic weight (increases with speed)
+    float alpha = SurgeVelocity / (SurgeVelocity + Vc);
+
+    // Base coefficients
+    float baseLinCoef = 6000.0f * ship.TurningDragCoef;
+    float baseQuadCoef = 2000.0f * ship.TurningDragCoef;
+
+    // Interpolated coefficients : blend lin ↔ quad
+    float effLinCoef = (1.0f - alpha) * baseLinCoef;
+    float effQuadCoef = alpha * baseQuadCoef;
+    float coeff = effLinCoef * SurgeVelocity + effQuadCoef * SurgeVelocity * SurgeVelocity;
+  
+    // Drift: combination of flax and dynamic quad
+    float driftDrag = coeff * driftFactor * (mLength * pivotFactorDrag);
+    if (driftDrag < 0.0001f) driftDrag = 0.0f;
+
+    // Pure yaw (yaw drag)
+    float yawDrag = coeff * 0.5f * fabs(YawVelocity) * (mLength * pivotFactorDrag);
+    if (yawDrag < 0.0001f) yawDrag = 0.0f;
+
+    // Final effect
+    SurgeAcceleration -= (driftDrag + yawDrag) / mMass;
+
+    // Slam and Surge ==================
     if (AreaWetted > 0.0f)
     {
         // Slam decreases the speed
@@ -2014,20 +2514,66 @@ void Ship::ComputeForces(float dt)
         SurgeAcceleration -= 0.1f * (AreaWetted / AreaWettedMax) * mGRAVITY * sin(Pitch);
     }
 
-    // Forces of rotation
+    // Yaw management ==================
     YawAcceleration = 0.0f;
-    if (ship.HasBowThruster)
-        YawAcceleration -= BowThrust.Magnitude * fabs(mStern.x) / Iyy;
-    YawAcceleration += RudderLift.Magnitude * (fabs(ship.PosRudder.x)) / Iyy;
+
+    // -- Thrusters --
+    if (ship.HasBowThruster)    
+        YawAcceleration -= BowThrust.Magnitude * fabs(ship.PosBowThruster.x) / Iyy;
+    if (ship.HasSternThruster)  
+        YawAcceleration += SternThrust.Magnitude * fabs(ship.PosSternThruster.x) / Iyy;
+
+    // -- Rudder --
+    YawAcceleration += RudderLift.Magnitude * (fabs(pivot - ship.PosRudder.x)) / Iyy;
+    
+    // -- Propellers --
+    if (ship.nPropeller == 2)
+    {
+        // 2 Propellers rotation
+        float couplePropellers = -(Thrust1.Magnitude - Thrust2.Magnitude) * glm::length(ship.PosPropeller1 - ship.PosPropeller2);
+        YawAcceleration += 5.0f * couplePropellers / Iyy;
+        // Propeller torque
+        YawAcceleration += PropTorque1.Magnitude / Iyy;
+    }
+    YawAcceleration += PropTorque2.Magnitude / Iyy;
+    
+    // -- Wind --
     YawAcceleration += WindRotation.Magnitude * (mLength * 0.5f) / Iyy;
+    
+    // -- Roll→yaw coupling --
+    YawAcceleration -= 0.2f * Roll;
 
-    // Heading variation according to roll
-    float roll_to_yaw_coeff = 0.2f;
-    YawAcceleration += -roll_to_yaw_coeff * Roll;
+    // -- Hydrodynamic directional stability --
+    float yawStability = 0.05f * SurgeVelocity * SurgeVelocity / mLength;
+    YawAcceleration -= (YawVelocity + yawStability * YawVelocity);
 
-    // Damping of yaw
-    YawAcceleration -= YawVelocity * damping;
+    // -- Influence of the pivot --
+    float pivotEffect = 1.0f - 0.5f * pivotFactorDrag;  // Less pivot (close to the midship) = more pivotEffect
+    YawAcceleration *= pivotEffect;
+
+    // -- Integration --
     YawVelocity += YawAcceleration * dt;
+
+    // -- Physical limit of the rate of turn --
+    float velocityAbs = fabs(SurgeVelocity);
+    // Values for high speed (low rate of turn)
+    const float speedHigh = ship.SpeedTestKn * 0.5144f;
+    // Values for low speed (high rate of turn)
+    const float speedLow = 0.5f * speedHigh;
+    const float yawVelocityMax = 1.0f;
+    // Smooth interpolation
+    float t = (SurgeVelocity - speedLow) / (speedHigh - speedLow);
+    t = (t < 0.0f) ? 0.0f : (t > 1.0f) ? 1.0f : t; // clamp between 0 et 1
+    float s = t * t * (3.0f - 2.0f * t);
+    float limitFactor = (1.0f - s) * yawVelocityMax + s * ship.HighSpeedCoeff;
+    float rateOfTurn_rad_s = limitFactor * ship.RoTMax * (M_PI / 180.0f) / 60.0f;
+    
+    TurnDiameter_m = 2.0f * fabs(SurgeVelocity / 0.5144f) * 1852.0f / (fabs(YawVelocity) * (180.0f / M_PI) * 60.0f);
+    TurnDiameter_L = TurnDiameter_m / ship.Length;
+
+    if (fabs(YawVelocity) > rateOfTurn_rad_s)
+        YawVelocity = rateOfTurn_rad_s * Sign(YawVelocity);
+
     Yaw += YawVelocity * dt;
 
     // New position
@@ -2037,19 +2583,21 @@ void Ship::ComputeForces(float dt)
     SurgeVelocity += SurgeAcceleration * dt;
     ship.Position += forward * SurgeVelocity * dt;
 
-    // Displacements (Bow thrust & Rudder lift)
+    // Displacements (Bow & Stern thrusters, Rudder lift)
     float dLat = 0.0f;
     if (ship.HasBowThruster && BowThrust.Magnitude != 0.0f)
-        dLat += mStern.x * sin(YawVelocity * dt); 
+        dLat += ship.PosBowThruster.x * Sign(BowThrust.Magnitude) * 0.01f * dt;
+    if (ship.HasSternThruster && SternThrust.Magnitude != 0.0f)
+        dLat += -ship.PosSternThruster.x * Sign(SternThrust.Magnitude) * 0.01f * dt;
     if (RudderLift.Magnitude != 0.0f)
-        dLat += -ship.PosRudder.x * sin(YawVelocity * dt) * 0.5f;
+        dLat += pivot * YawVelocity * dt;
 
     vec3 zA(0.0f, 0.0f, 1.0f);
     vec3 perpend = vec3(rotationMatrix * vec4(zA, 0.0f));
     ship.Position += perpend * dLat;
 
     // Wind drift
-    float forceDrift = 0.01f * (WindFront.Magnitude + WindRear.Magnitude);
+    float forceDrift = 0.005f * (WindFront.Magnitude + WindRear.Magnitude);
     WindAcceleration = forceDrift / (0.5f * mLength * mLength) - 0.1 * WindVelocity;
     WindVelocity += WindAcceleration * dt;
     ship.Position += glm::normalize(-vec3(g_Wind.x, 0.0f, g_Wind.y)) * WindVelocity * dt;
@@ -2060,8 +2608,8 @@ void Ship::ComputeForces(float dt)
     vec2 deltaPos = vec2(ship.Position.x, ship.Position.z) - prevPosition;
     LinearVelocity = dot(normalize(vec2(forward.x, forward.z)), deltaPos) / dt;
     DriftVelocity = dot(normalize(vec2(perpend.x, perpend.z)), deltaPos) / dt;
-    vCOG = deltaPos;
-    Velocity = glm::length(vCOG) / dt;
+    vCOG = deltaPos / dt;
+    Velocity = glm::length(vCOG);
 
     // HDG, COG, SOG
     HDG = fmod(450.0f - glm::degrees(Yaw), 360.0f);
@@ -2076,6 +2624,8 @@ void Ship::ComputeForces(float dt)
     else                            COG = glm::degrees(std::atan2(dPos.y, dPos.x)) + 90;
     while (COG < 0.0f)      COG += 360.0f;
     while (COG > 360.0f)    COG -= 360.0f;
+
+    DriftAngleDeg = DifferenceDEG(HDG, COG);
 
 	// SOG at the bow and the stern
     mat4 world = mat4(1.0f);
@@ -2099,6 +2649,53 @@ void Ship::ComputeForces(float dt)
     // COG - SOG force drawn
     COGSOG.Position = TransformPosition(ship.PosPower);
     COGSOG.Vector = 1e6f * vec3(vCOG.x, 0.0f, vCOG.y);
+
+    /////////////////////////////////////////////
+    
+    auto fillResultData = [](const sForce& force) -> sResultData
+        {
+            sResultData result;
+            result.variable = force.Name;
+            result.value = static_cast<double>(force.Magnitude);
+            result.decimal = force.Decimal;
+            result.unit = force.Unit;
+            return result;
+        };
+    
+    if (g_bShowShipForcesWindows)
+    {
+        vForcesData.clear();
+        vForcesData.push_back(fillResultData(Archimede));
+        vForcesData.push_back(fillResultData(Gravity));
+        vForcesData.push_back(fillResultData(ResistanceHeave));
+        if (ship.nPropeller == 2) vForcesData.push_back(fillResultData(Thrust1));
+        vForcesData.push_back(fillResultData(Thrust2));
+        if (ship.nPropeller == 2) vForcesData.push_back(fillResultData(PropDrag1));
+        vForcesData.push_back(fillResultData(PropDrag2));
+        if (ship.nPropeller == 2) vForcesData.push_back(fillResultData(PropTorque1));
+        vForcesData.push_back(fillResultData(PropTorque2));
+        vForcesData.push_back(fillResultData(ResistanceViscous));
+        vForcesData.push_back(fillResultData(ResistanceWaves));
+        vForcesData.push_back(fillResultData(ResistanceResidual));
+        if (ship.HasBowThruster) vForcesData.push_back(fillResultData(BowThrust));
+        if (ship.HasSternThruster) vForcesData.push_back(fillResultData(SternThrust));
+        vForcesData.push_back(fillResultData(RudderLift));
+        vForcesData.push_back(fillResultData(RudderDrag));
+        sResultData rd;
+        rd.unit = "N";
+        rd.decimal = 3;
+        rd.variable = "DriftDrag";
+        rd.value = static_cast<double>(driftDrag);
+        vForcesData.push_back(rd);
+        rd.variable = "YawDrag";
+        rd.value = static_cast<double>(yawDrag);
+        vForcesData.push_back(rd);
+        vForcesData.push_back(fillResultData(WindRotation));
+        vForcesData.push_back(fillResultData(WindFront));
+        vForcesData.push_back(fillResultData(WindRear));
+        vForcesData.push_back(fillResultData(ResistanceAir));
+        vForcesData.push_back(fillResultData(Centrifugal));
+    }
 }
 void Ship::UpdateAutopilot(float dt)
 {
@@ -2148,7 +2745,7 @@ void Ship::UpdateAutopilot(float dt)
     ship.BaseD              Derivative
 
     ship.MaxIntegral        Limit of the integral to avoid runaway
-    ship.SpeedFactor        Factor to adjust the influence of speed
+    ship.DynamicFactor        Factor to adjust the influence of speed
     ship.MinSpeed           Minimum speed to avoid division by zero
     ship.LowSpeedBoost      Low speed amplification factor
     ship.SeaSateFactor      Increases responsiveness in difficult conditions (Pitch and Roll)
@@ -2161,7 +2758,7 @@ void Ship::UpdateAutopilot(float dt)
     error = -error;
 
     auto adjustGain = [&](float baseGain, float shipSpeed) {
-        float speedFactor = 1.0f / (1.0f + shipSpeed / ship.SpeedFactor);
+        float speedFactor = 1.0f / (1.0f + shipSpeed / ship.DynamicFactor);
         float seaStateFactor = 1.0f + (std::abs(Pitch) + std::abs(Roll)) * ship.SeaSateFactor;
         return baseGain * speedFactor * seaStateFactor;
         };
@@ -2194,14 +2791,28 @@ void Ship::UpdateAutopilot(float dt)
     // Calculate the total rudder angle
     float rudderAngle = p + i + d;
 
-    // Adjust the rudder angle according to the speed
+    // Adjust the rudder angle according to the low speed
     float adjustedSpeed = std::max(SurgeVelocity, ship.MinSpeed);
-
-    float speedFactor = (ship.SpeedFactor / adjustedSpeed) * ship.LowSpeedBoost;
+    float speedFactor = (ship.DynamicFactor / adjustedSpeed) * ship.LowSpeedBoost;
     speedFactor = std::min(speedFactor, ship.LowSpeedBoost); // Limit the maximum factor
-
     rudderAngle *= speedFactor;
 
+    // Adjust the rudder angle according to the high speed
+    float highSpeedLimitFactor = 1.0f; 
+    float maxReduction = 0.01f; // réduit l'angle au minimum à 5% à très haute vitesse
+
+    if (SurgeVelocity <= ship.HighSpeedLimit) 
+        highSpeedLimitFactor = 1.0f;
+    else 
+    {
+        // Exponentielle décroissante lissée : 
+        // Valeur à limitStart = 1, diminue vers maxReduction à haute vitesse
+        float excess = SurgeVelocity - ship.HighSpeedLimit;
+        highSpeedLimitFactor = std::max(maxReduction, std::exp(-0.3f * excess));
+    }
+
+    // application
+    rudderAngle *= highSpeedLimitFactor;
     // Limit the rudder angle to the maximum allowed
     rudderAngle = std::clamp(rudderAngle, -(float)ship.RudderStepMax, (float)ship.RudderStepMax);
     RudderCurrentStep = rudderAngle;
@@ -2237,9 +2848,25 @@ void Ship::UpdateVaoPressureLines()
 }
 void Ship::UpdateSounds()
 {   
-    bool sound = bSound && g_SoundMgr->bSound;
+    bool sound = bSound && g_SoundMgr->bSound && bVisible && !g_bPause;
+    
+    // Power 1
+    mSoundThrust1->setPitch(2.0f + 0.25f * fabs(PowerApplied1) / mPowerW);
+    if (g_Camera.GetPosition().y < 0.0f)
+        mSoundThrust1->setVolume(0.02f + 0.25f * fabs(PowerApplied1) / mPowerW);
+    else
+        mSoundThrust1->setVolume(0.25f + 0.25f * fabs(PowerApplied1) / mPowerW);
+    mSoundThrust1->setPosition(TransformPosition(ship.PosPropeller1));
 
-    mSoundPower->setPosition(TransformPosition(ship.PosPower));
+    // Power 2
+    mSoundThrust2->setPitch(2.0f + 0.25f * fabs(PowerApplied2) / mPowerW);
+    if (g_Camera.GetPosition().y < 0.0f)
+        mSoundThrust2->setVolume(0.02f + 0.25f * fabs(PowerApplied2) / mPowerW);
+    else
+        mSoundThrust2->setVolume(0.25f + 0.25f * fabs(PowerApplied2) / mPowerW);
+    mSoundThrust2->setPosition(TransformPosition(ship.PosPropeller2));
+
+    // Bow thruster
     if (ship.HasBowThruster)
     {
         mSoundBowThruster->setPosition(TransformPosition(ship.PosBowThruster));
@@ -2265,19 +2892,51 @@ void Ship::UpdateSounds()
         }
     }
 
-    static bool bPause = false;
-    if (!bVisible || !sound)
+    // Stern thruster
+    if (ship.HasSternThruster)
     {
-        mSoundPower->pause();
+        mSoundSternThruster->setPosition(TransformPosition(ship.PosSternThruster));
+        if (!mbSoundSternThrusterPlaying)
+        {
+            if (SternThrusterRpm != ship.SternThrusterRpmMin)
+            {
+                alGetError(); // clear error state
+                mSoundSternThruster->play();
+                ALenum error;
+                if ((error = alGetError()) != AL_NO_ERROR)
+                    cout << "alSourcef 0 AL_PITCH : " << error << endl;
+                mbSoundSternThrusterPlaying = true;
+            }
+        }
+        else
+        {
+            if (SternThrusterRpm == ship.SternThrusterRpmMin)
+            {
+                mSoundSternThruster->pause();
+                mbSoundSternThrusterPlaying = false;
+            }
+        }
+    }
+
+    static bool bPause = false;
+    if (!sound)
+    {
+        mSoundThrust1->pause();
+        mSoundThrust2->pause();
         if (ship.HasBowThruster)
             mSoundBowThruster->pause();
+        if (ship.HasSternThruster)
+            mSoundSternThruster->pause();
         bPause = true;
     }
-    if (bVisible && sound && bPause)
+    if (sound && bPause)
     {
-        mSoundPower->play();
+        mSoundThrust1->play();
+        mSoundThrust2->play();
         if (ship.HasBowThruster && BowThrusterRpm != ship.BowThrusterRpmMin)
             mSoundBowThruster->play();
+        if (ship.HasSternThruster && SternThrusterRpm != ship.SternThrusterRpmMin)
+            mSoundSternThruster->play();
         bPause = false;
     }
 }
@@ -2309,11 +2968,11 @@ void Ship::UpdateSmoke(float dt)
     mShaderSmokeCompute->use();
     mShaderSmokeCompute->setFloat("dt", dt);
     mShaderSmokeCompute->setInt("particlesPerFrame", 3);
-    vec3 p = TransformPosition(ship.Chimney1);
+    vec3 p = TransformPosition(ship.PosChimney1);
     mShaderSmokeCompute->setVec3("emitPositions[0]", p);
     if (ship.nChimney == 2)
     {
-        p = TransformPosition(ship.Chimney2);
+        p = TransformPosition(ship.PosChimney2);
         mShaderSmokeCompute->setVec3("emitPositions[1]", p);
     }
     mShaderSmokeCompute->setInt("numEmitters", ship.nChimney);
@@ -2386,8 +3045,8 @@ void Ship::UpdateSpray(float dt)
 
                 vec3 velocity = TransformVector(interpNormal) * intensity;
                 velocity.y += intensity + 2.0f * ship.SprayVerticalPerf * PitchVelocity;
-                velocity.x += 2.0f * vCOG.x;
-                velocity.z += 2.0f * vCOG.y;
+                velocity.x += 0.01f * vCOG.x;
+                velocity.z += 0.01f * vCOG.y;
                 velocity *= Velocity * 0.5f;
                 if (intensity > 0.0f)
                     mSpray->Emit(emitPosWorld, velocity);
@@ -2516,7 +3175,7 @@ void Ship::UpdateWakeVao()
         sfp.time = glfwGetTime();
         vWakePoints.push_back(sfp);
         // Cleaning to not exceed a limit
-        if (vWakePoints.size() > 100) vWakePoints.erase(vWakePoints.begin());
+        if (vWakePoints.size() > 500) vWakePoints.erase(vWakePoints.begin());
         compteurSillage = 0;
     }
     
@@ -2590,24 +3249,6 @@ void Ship::UpdateWakeVao()
 
     float now = glfwGetTime();
     
-    /*
-    // 1 trail
-    for (size_t i = 0; i + 1 < n; ++i)
-    {
-        float v0 = uv_v, v1 = uv_v + dv;
-        float alpha0 = calcAlpha(vWakePoints[i].time, now);
-        float alpha1 = calcAlpha(vWakePoints[i + 1].time, now);
-        // Triangle 1
-        vWakeVertices.push_back({ sideLeft[i],  {0, v0}, alpha0 });
-        vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
-        vWakeVertices.push_back({ sideLeft[i + 1],  {0, v1}, alpha1 });
-        // Triangle 2
-        vWakeVertices.push_back({ sideLeft[i + 1],  {0, v1}, alpha1 });
-        vWakeVertices.push_back({ sideRight[i], {1, v0}, alpha0 });
-        vWakeVertices.push_back({ sideRight[i + 1], {1, v1}, alpha1 });
-        uv_v += dv;
-    }
-    */
     // 3 trails (left and right with foam and center without foam)
     for (size_t i = 0; i + 1 < n; ++i)
     {
@@ -2709,6 +3350,75 @@ void Ship::UpdateTextureWakeVao()
     mScreenQuadWakeBuffer->Render();  // -> TexWakeVao
 }
 
+// NMEA
+
+unsigned char calculate_checksum(const std::string& sentence) 
+{
+    // Calcul du checksum NMEA XOR sur la chaîne entre $ et *
+    unsigned char checksum = 0;
+    for (size_t i = 1; i < sentence.size(); ++i) 
+    {
+        if (sentence[i] == '*') break;
+        checksum ^= sentence[i];
+    }
+    return checksum;
+}
+string format_latitude(double latitude) 
+{
+    // Formatage de la latitude/direction N/S
+    char dir = (latitude >= 0) ? 'N' : 'S';
+    latitude = std::abs(latitude);
+    int deg = static_cast<int>(latitude);
+    double min = (latitude - deg) * 60;
+    ostringstream ss;
+    ss << std::setfill('0') << std::setw(2) << deg << std::fixed << std::setprecision(4) << std::setw(7) << min << "," << dir;
+    return ss.str();
+}
+string format_longitude(double longitude) 
+{
+    // Formatage de la longitude/direction E/W
+    char dir = (longitude >= 0) ? 'E' : 'W';
+    longitude = std::abs(longitude);
+    int deg = static_cast<int>(longitude);
+    double min = (longitude - deg) * 60;
+    std::ostringstream ss;
+    ss << std::setfill('0') << std::setw(3) << deg << std::fixed << std::setprecision(4) << std::setw(7) << min << "," << dir;
+    return ss.str();
+}
+string Ship::NMEA_RMC()
+{
+    // Exemple de données à envoyer
+    string time_utc = "123519"; // hhmmss
+    char status = 'A'; // A = valide, V = invalide
+    vec2 p = OpenGLToLonLat(ship.Position.x, ship.Position.z);
+    double longitude = p.x; 
+    double latitude = p.y;  
+    double speed_knots = MsToKnots(SurgeVelocity);
+    double course = HDG;
+    string date = "230394"; // ddmmyy
+
+    // Construction de la phrase sans le checksum ni $
+    ostringstream sentence;
+    sentence << "GPRMC,"
+        << time_utc << ","
+        << status << ","
+        << format_latitude(latitude) << ","
+        << format_longitude(longitude) << ","
+        << std::fixed << std::setprecision(1) << speed_knots << ","
+        << course << "," << date << ",,,A";
+
+    // Construire la phrase complète avec $ et checksum *
+    string full_sentence = "$" + sentence.str();
+    unsigned char checksum = calculate_checksum(full_sentence);
+    std::ostringstream final_sentence;
+    final_sentence << full_sentence << "*"
+        << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
+        << (int)checksum << "\r\n";
+
+    cout << final_sentence.str();
+    return final_sentence.str();
+}
+
 // Render
 void Ship::RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 color, bool bRenderOrigin)
 {
@@ -2718,7 +3428,7 @@ void Ship::RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 
     float longueur = scale * glm::length(V);
     mat4 model(1.0f);
     model = glm::translate(model, vec3(longueur, 0, 0));
-    model = glm::scale(model, vec3(longueur, 0.05f, 0.05f));
+    model = glm::scale(model, vec3(longueur, 0.1f, 0.1f));
     quat q = RotationBetweenVectors(vec3(1.0f, 0.0f, 0.0f), V);
     model = glm::mat4_cast(q) * model;
     model = glm::translate(mat4(1.0f), P) * model;
@@ -2746,7 +3456,7 @@ void Ship::RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 colo
     float longueur = scale * glm::length(f.Vector);
     mat4 model(1.0f);
     model = glm::translate(model, vec3(longueur, 0, 0));
-    model = glm::scale(model, vec3(longueur, 0.05f, 0.05f));
+    model = glm::scale(model, vec3(longueur, 0.1f, 0.1f));
     quat q = RotationBetweenVectors(vec3(1.0f, 0.0f, 0.0f), vec);
     model = mat4_cast(q) * model;
     model = glm::translate(mat4(1.0f), pos) * model;
@@ -2774,7 +3484,7 @@ void Ship::RenderWakeVao(Camera& camera)
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-    mShaderWakeVao->use();    // Shaders/unicolor.vert, Shaders/unicolor.frag
+    mShaderWakeVao->use();    // Misc/unicolor.vert, Misc/unicolor.frag
     mShaderWakeVao->setVec3("lineColor", vec3(1.0f, 1.0f, 1.0f));
     mShaderWakeVao->setMat4("model", mat4(1.0f));
     mShaderWakeVao->setMat4("view", camera.GetView());
@@ -2809,10 +3519,12 @@ void Ship::RenderContour(Camera& camera)
     glBindVertexArray(0);
 
 }
-
 void Ship::RenderNavLight(Camera& camera, int i, float distance)
 {
-    mShaderNavLight->use();     // Shaders/ship_light.vert, Shaders/ship_light.frag
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+    
+    mShaderNavLight->use();     // Misc/ship_light.vert, Misc/ship_light.frag
     mat4 model = glm::translate(mat4(1.0), TransformPosition(ship.LightPositions[i]));
     float scale = mix(1.0f, 20.0f, distance / 2000.0f);
     model = glm::scale(model, vec3(scale));
@@ -2821,57 +3533,58 @@ void Ship::RenderNavLight(Camera& camera, int i, float distance)
     mShaderNavLight->setMat4("projection", camera.GetProjection());
     mShaderNavLight->setVec3("lightColor", ship.LightColors[i]);
     mShaderNavLight->setVec3("viewPos", camera.GetPosition());
-    mShaderNavLight->setFloat("intensity", 100000.0f);
     mLight->Bind();
 }
-void Ship::RenderPropellers(Camera& camera,Sky* sky)
+void Ship::RenderPropellers(Camera& camera, Sky* sky)
 {
+    if (ship.nPropeller == 0)
+        return;
+
     // Light from sun
-    mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+    mShaderShip->use();     // Ship/ship.vert, Ship/ship.frag
     mShaderShip->setVec3("light.position", sky->SunPosition);
     mShaderShip->setVec3("light.ambient", sky->SunAmbient);
     mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
     mShaderShip->setVec3("light.specular", sky->SunSpecular);
     mShaderShip->setVec3("viewPos", camera.GetPosition());
     mShaderShip->setFloat("exposure", sky->Exposure);
-    // Matricies
-    float omega = PowerRpm * (2.0f * M_PI) / 60.0f; // radians par seconde
-    static float rotation = 0.0f;
-    rotation += omega * mDt; // incrémente la rotation à chaque frame
-    if (rotation > 360.0f)
-        rotation -= 360.0f;
-    mat4 matPropeller1 = mat4(1.0f);
-    matPropeller1 = glm::translate(matPropeller1, ship.Propeller1);
-    matPropeller1 = glm::rotate(matPropeller1, rotation, vec3(1.0f, 0.0f, 0.0f));
-    mShaderShip->setMat4("model", World * matPropeller1);
-    
     mShaderShip->setMat4("view", camera.GetView());
     mShaderShip->setMat4("projection", camera.GetProjection());
-    mPropeller->Render(*mShaderShip);
- 
-    if (ship.nPropeller > 1)
+    // Matricies
+    if (ship.nPropeller == 2 && mPropeller1.get())
     {
-        mat4 matPropeller2 = mat4(1.0f);
-        matPropeller2 = glm::translate(matPropeller2, ship.Propeller2);
-        matPropeller2 = glm::rotate(matPropeller2, rotation, vec3(1.0f, 0.0f, 0.0f));
-
-        mShaderShip->setMat4("model", World * matPropeller2);
-        mPropeller->Render(*mShaderShip);
+        float omega1 = PropRpm1 * (2.0f * M_PI) / 60.0f; // radians par seconde
+        static float rotation1 = 0.0f;
+        rotation1 -= omega1 * mDt; // incrémente la rotation à chaque frame
+        if (rotation1 > 360.0f)
+            rotation1 -= 360.0f;
+        mat4 matPropeller1 = mat4(1.0f);
+        matPropeller1 = glm::translate(matPropeller1, ship.PosPropeller1);
+        matPropeller1 = glm::rotate(matPropeller1, rotation1, vec3(1.0f, 0.0f, 0.0f));
+        mShaderShip->setMat4("model", World * matPropeller1);
+        mPropeller1->Render(*mShaderShip);
     }
-    if (ship.nPropeller > 2)
+    if (ship.nPropeller > 0 && mPropeller2.get())
     {
-        mat4 matPropeller3 = mat4(1.0f);
-        matPropeller3 = glm::translate(matPropeller3, ship.Propeller3);
-        matPropeller3 = glm::rotate(matPropeller3, rotation, vec3(1.0f, 0.0f, 0.0f));
-
-        mShaderShip->setMat4("model", World * matPropeller3);
-        mPropeller->Render(*mShaderShip);
+        float omega2 = PropRpm2 * (2.0f * M_PI) / 60.0f; // radians par seconde
+        static float rotation2 = 0.0f;
+        rotation2 += omega2 * mDt; // incrémente la rotation à chaque frame
+        if (rotation2 > 360.0f)
+            rotation2 -= 360.0f;
+        mat4 matPropeller2 = mat4(1.0f);
+        matPropeller2 = glm::translate(matPropeller2, ship.PosPropeller2);
+        matPropeller2 = glm::rotate(matPropeller2, rotation2, vec3(1.0f, 0.0f, 0.0f));
+        mShaderShip->setMat4("model", World * matPropeller2);
+        mPropeller2->Render(*mShaderShip);
     }
 }
 void Ship::RenderRudders(Camera& camera, Sky* sky)
 {
+    if (!mRudder.get())
+        return;
+
     // Light from sun
-    mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+    mShaderShip->use();     // Ship/ship.vert, Ship/ship.frag
     mShaderShip->setVec3("light.position", sky->SunPosition);
     mShaderShip->setVec3("light.ambient", sky->SunAmbient);
     mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
@@ -2881,7 +3594,7 @@ void Ship::RenderRudders(Camera& camera, Sky* sky)
     // Matricies
     float rotation = -RudderAngleDeg * M_PI / 180.0f;
     mat4 matRudder1 = mat4(1.0f);
-    matRudder1 = glm::translate(matRudder1, ship.Rudder1);
+    matRudder1 = glm::translate(matRudder1, ship.PosRudder1);
     matRudder1 = glm::rotate(matRudder1, rotation, vec3(0.0f, 1.0f, 0.0f));
     mShaderShip->setMat4("model", World * matRudder1);
 
@@ -2892,23 +3605,14 @@ void Ship::RenderRudders(Camera& camera, Sky* sky)
     if (ship.nRudder > 1)
     {
         mat4 matRudder2 = mat4(1.0f);
-        matRudder2 = glm::translate(matRudder2, ship.Rudder2);
+        matRudder2 = glm::translate(matRudder2, ship.PosRudder2);
         matRudder2 = glm::rotate(matRudder2, rotation, vec3(0.0f, 1.0f, 0.0f));
 
         mShaderShip->setMat4("model", World * matRudder2);
         mRudder->Render(*mShaderShip);
     }
-    if (ship.nRudder > 2)
-    {
-        mat4 matRudder3 = mat4(1.0f);
-        matRudder3 = glm::translate(matRudder3, ship.Rudder3);
-        matRudder3 = glm::rotate(matRudder3, rotation, vec3(0.0f, 1.0f, 0.0f));
-
-        mShaderShip->setMat4("model", World * matRudder3);
-        mRudder->Render(*mShaderShip);
-    }
 }
-void Ship::RenderRadars(Camera& camera, Sky* sky, bool bReflexion)
+void Ship::RenderRadars(Camera& camera, Sky* sky)
 {
     if (!bVisible)
         return;
@@ -2919,11 +3623,14 @@ void Ship::RenderRadars(Camera& camera, Sky* sky, bool bReflexion)
     if (ship.nRadar == 0)
         return;
 
+    if (!mRadar1.get())
+        return;
+
     if (Rendering == eRendering::TRIANGLES)
         return;
 
     // Light from sun
-    mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+    mShaderShip->use();     // Ship/ship.vert, Ship/ship.frag
     mShaderShip->setVec3("light.position", sky->SunPosition);
     mShaderShip->setVec3("light.ambient", sky->SunAmbient);
     mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
@@ -2935,12 +3642,10 @@ void Ship::RenderRadars(Camera& camera, Sky* sky, bool bReflexion)
     rot1 -= ship.RotationRadar1 * 6.0f * mDt;
     rot1 = fmod(rot1, 360.0f);
     mat4 matRadar1 = mat4(1.0f);
-    matRadar1 = glm::translate(matRadar1, ship.Radar1);
+    matRadar1 = glm::translate(matRadar1, ship.PosRadar1);
     matRadar1 = glm::rotate(matRadar1, glm::radians(rot1), vec3(0.0f, 1.0f, 0.0f));
     mShaderShip->setMat4("model", World * matRadar1);
-
-    if (!bReflexion)    mShaderShip->setMat4("view", camera.GetView());
-    else                mShaderShip->setMat4("view", camera.GetViewReflexion());
+    mShaderShip->setMat4("view", camera.GetView());
     mShaderShip->setMat4("projection", camera.GetProjection());
     mRadar1->Render(*mShaderShip);
 
@@ -2950,21 +3655,45 @@ void Ship::RenderRadars(Camera& camera, Sky* sky, bool bReflexion)
         rot2 -= ship.RotationRadar2 * 6.0f * mDt;
         rot2 = fmod(rot2, 360.0f);
         mat4 matRadar2 = mat4(1.0f);
-        matRadar2 = glm::translate(matRadar2, ship.Radar2);
+        matRadar2 = glm::translate(matRadar2, ship.PosRadar2);
         matRadar2 = glm::rotate(matRadar2, glm::radians(rot2), vec3(0.0f, 1.0f, 0.0f));
         mShaderShip->setMat4("model", World * matRadar2);
         mRadar2->Render(*mShaderShip);
     }
 }
+void Ship::RenderFlag(Camera& camera, Sky* sky)
+{
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+    
+    if (!bFlag)
+        return;
+
+    if (!ship.bFlag)
+        return;
+
+    if (mFlag.get() == 0)
+        return;
+
+    vec2 windApparent = (- vCOG) + (- g_Wind);
+    mFlag->Update(mDt, windApparent);
+
+    mat4 model = glm::translate(mat4(1.0f), ship.PosFlag);
+    model = glm::rotate(model, -Yaw, vec3(0.0f, 1.0f, 0.0f));
+    mFlag->Render(World * model, camera.GetView(), camera.GetProjection(), sky->Exposure);
+}
 void Ship::RenderSmoke(Camera& camera, Sky* sky)
 {
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+
     if (!bSmoke)
         return;
     
     if (ship.nChimney == 0)
         return;
 
-    float density = InterpolateAValue(0.0f, mPowerW, 0.01f, 0.15f, fabs(PowerApplied));
+    float density = InterpolateAValue(0.0f, mPowerW, 0.01f, 0.15f, fabs(PowerApplied1));
 
     glDepthMask(GL_FALSE);
 
@@ -2985,6 +3714,9 @@ void Ship::RenderSmoke(Camera& camera, Sky* sky)
 }
 void Ship::RenderSpray(Camera& camera, Sky* sky)
 {
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+    
     if (!bVisible)
         return;
 
@@ -3027,7 +3759,7 @@ void Ship::RenderReflexion(Camera& camera, Sky* sky)
         case eRendering::BASIC_LIGHT:
         {
             // Light from camera
-            mShaderCamera->use();   // Shaders/camera.vert, Shaders/camera.frag
+            mShaderCamera->use();   // Misc/camera.vert, Misc/camera.frag
             mShaderCamera->setVec3("light.position", camera.GetPosition() - ship.Position);
             mShaderCamera->setVec3("light.diffuse", vec3(1.0f));
             mShaderCamera->setMat4("model", World);
@@ -3039,7 +3771,7 @@ void Ship::RenderReflexion(Camera& camera, Sky* sky)
         case eRendering::SUN:
         {
             // Light from sun
-            mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
+            mShaderShip->use();     // Ship/ship.vert, Ship/ship.frag
             mShaderShip->setVec3("light.position", sky->SunPosition);
             mShaderShip->setVec3("light.ambient", sky->SunAmbient);
             mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
@@ -3063,9 +3795,68 @@ void Ship::RenderReflexion(Camera& camera, Sky* sky)
         }
         break;
         }
-
-        RenderRadars(camera, sky, true);
     }
+}
+void Ship::RenderShadow(Camera& camera, Sky* sky)
+{
+    if (!bVisible)
+        return;
+
+    if (bWireframe)
+        return;
+
+    if (Rendering == eRendering::TRIANGLES)
+        return;
+    
+    glEnable(GL_DEPTH_TEST);
+
+    vec3 lightDir = glm::normalize(sky->SunPosition);
+    vec3 lightPos = ship.Position + lightDir * 200.0f;
+    mat4 lightView = glm::lookAt(lightPos, ship.Position, vec3(0.0f, 1.0f, 0.0f));
+    
+
+    vec3 BBmin = TransformPosition(mBbox.min);
+    vec3 BBmax = TransformPosition(mBbox.max);
+    vec3 bboxCorners[8];
+    bboxCorners[0] = vec3(BBmin.x, BBmin.y, BBmin.z);
+    bboxCorners[1] = vec3(BBmax.x, BBmin.y, BBmin.z);
+    bboxCorners[2] = vec3(BBmin.x, BBmax.y, BBmin.z);
+    bboxCorners[3] = vec3(BBmax.x, BBmax.y, BBmin.z);
+    bboxCorners[4] = vec3(BBmin.x, BBmin.y, BBmax.z);
+    bboxCorners[5] = vec3(BBmax.x, BBmin.y, BBmax.z);
+    bboxCorners[6] = vec3(BBmin.x, BBmax.y, BBmax.z);
+    bboxCorners[7] = vec3(BBmax.x, BBmax.y, BBmax.z);
+
+    vec3 lightSpaceMin(FLT_MAX);
+    vec3 lightSpaceMax(-FLT_MAX);
+    for (int i = 0; i < 8; ++i) 
+    {
+        vec4 lightPos = lightView * vec4(bboxCorners[i], 1.0f);
+        vec3 ls = vec3(lightPos);
+        lightSpaceMin = glm::min(lightSpaceMin, ls);
+        lightSpaceMax = glm::max(lightSpaceMax, ls);
+    }
+    vec3 lightSpaceSize = lightSpaceMax - lightSpaceMin;
+    float dimOptimized = glm::max(lightSpaceSize.x, lightSpaceSize.y) * 0.5f;
+    
+    const float far_plane = 300.0f;
+    mat4 lightProjection = glm::ortho(-dimOptimized, dimOptimized, -dimOptimized, dimOptimized, -lightSpaceMax.z, far_plane);
+    LightViewProjection = lightProjection * lightView;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_SHADOW);
+    glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    mShaderShadow->use();
+    mShaderShadow->setMat4("lightSpaceMatrix", LightViewProjection);
+    mShaderShadow->setMat4("model", World);
+    mModelFull->Render(*mShaderShadow);
+
+    //SaveTexture2D(TexShadowMap, SHADOW_SIZE, SHADOW_SIZE, 1, GL_DEPTH_COMPONENT, "Outputs/depth_map.png");
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    
+    glDisable(GL_DEPTH_TEST);
 }
 
 void Ship::Render(Camera& camera, Sky* sky)
@@ -3089,7 +3880,7 @@ void Ship::Render(Camera& camera, Sky* sky)
         {
         case eRendering::TRIANGLES:
         {
-            mShaderHullColored->use();     // Shaders/hull_colored.vert, Shaders/hull_colored.frag
+            mShaderHullColored->use();     // Misc/hull_colored.vert, Misc/hull_colored.frag
             mShaderHullColored->setMat4("model", World);
             mShaderHullColored->setMat4("view", camera.GetView());
             mShaderHullColored->setMat4("projection", camera.GetProjection());
@@ -3102,7 +3893,7 @@ void Ship::Render(Camera& camera, Sky* sky)
         case eRendering::BASIC_LIGHT:
         {
             // Light from camera
-            mShaderCamera->use();   // Shaders/camera.vert, Shaders/camera.frag
+            mShaderCamera->use();   // Misc/camera.vert, Misc/camera.frag
             mShaderCamera->setVec3("light.position", camera.GetPosition() - ship.Position);
             mShaderCamera->setVec3("light.diffuse", vec3(1.0f));
             mShaderCamera->setMat4("model", World);
@@ -3114,34 +3905,42 @@ void Ship::Render(Camera& camera, Sky* sky)
         case eRendering::SUN:
         {
             // Light from sun
-            mShaderShip->use();     // Shaders/ship.vert, Shaders/ship.frag
-            mShaderShip->setVec3("light.position", sky->SunPosition);
-            mShaderShip->setVec3("light.ambient", sky->SunAmbient);
-            mShaderShip->setVec3("light.diffuse", sky->SunDiffuse);
-            mShaderShip->setVec3("light.specular", sky->SunSpecular);
-            mShaderShip->setVec3("viewPos", camera.GetPosition());
-            mShaderShip->setFloat("exposure", sky->Exposure);
+            mShaderShipShadow->use();     // Ship/ship_shadow.vert, Ship/ship_shadow.frag
+            mShaderShipShadow->setVec3("light.position", sky->SunPosition);
+            mShaderShipShadow->setVec3("light.ambient", sky->SunAmbient);
+            mShaderShipShadow->setVec3("light.diffuse", sky->SunDiffuse);
+            mShaderShipShadow->setVec3("light.specular", sky->SunSpecular);
+            mShaderShipShadow->setVec3("viewPos", camera.GetPosition());
+            mShaderShipShadow->setFloat("exposure", sky->Exposure);
+            mShaderShipShadow->setInt("texture_diffuse1", 0);
             if (camera.GetMode() == eCameraMode::ORBITAL || camera.GetMode() == eCameraMode::FPS)
-                mShaderShip->setFloat("envmapFactor", ship.EnvMapFactor);
+                mShaderShipShadow->setFloat("envmapFactor", ship.EnvMapFactor);
             else
-                mShaderShip->setFloat("envmapFactor", 0.0f);
-            mShaderShip->setInt("envmap", 1);
+                mShaderShipShadow->setFloat("envmapFactor", 0.0f);
+            mShaderShipShadow->setInt("envmap", 1);
             // Matricies
-            mShaderShip->setMat4("model", World);
-            mShaderShip->setMat4("view", camera.GetView());
-            mShaderShip->setMat4("projection", camera.GetProjection());
+            mShaderShipShadow->setMat4("model", World);
+            mShaderShipShadow->setMat4("view", camera.GetView());
+            mShaderShipShadow->setMat4("projection", camera.GetProjection());
+            mShaderShipShadow->setMat4("matLightViewProj", LightViewProjection);
 
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_CUBE_MAP, mTexEnvironment->id);
 
-            mModelFull->Render(*mShaderShip);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, TexShadowMap);
+            mShaderShipShadow->setInt("shadowMap", 2);
+            mShaderShipShadow->setBool("bShipShadow", g_bShipShadow);
+
+            mModelFull->RenderWithTransparency(*mShaderShipShadow, camera, World);
         }
         break;
         }
 
         RenderPropellers(camera, sky);
         RenderRudders(camera, sky);
-        RenderRadars(camera, sky, false);
+        RenderRadars(camera, sky);
+        RenderFlag(camera, sky);
     }
 #pragma endregion
 
@@ -3149,31 +3948,34 @@ void Ship::Render(Camera& camera, Sky* sky)
 
 #pragma region Navigation lights
     {
-        vec3 lightDir = glm::normalize(sky->SunPosition);
-        float dCamera_Ship = glm::length(camera.GetPosition() - ship.Position);
-        if (bLights /*lightDir.y < 0.2*/)
+        if (camera.GetMode() != eCameraMode::BRIDGE)
         {
-            // Visibility of navigation lights
-            vec3 shipForward = TransformPosition(vec3(mLength * 0.5f, 0.0f, 0.0f)) - ship.Position;
-            vec3 cameraToShip = camera.GetPosition() - ship.Position;
-            vec3 up(0.0f, 1.0f, 0.0f);
-            shipForward.y = 0.0f;
-            cameraToShip.y = 0.0f;
-            float angleDeg = degrees(orientedAngle(glm::normalize(shipForward), glm::normalize(cameraToShip), up));
-            if (angleDeg > -112.5f && angleDeg < -3.0f)
-                RenderNavLight(camera, 1, dCamera_Ship);  // Green
-            else if (angleDeg >= -3.0f && angleDeg <= 3.0f)
+            vec3 lightDir = glm::normalize(sky->SunPosition);
+            float dCamera_Ship = glm::length(camera.GetPosition() - ship.Position);
+            if (bLights /*lightDir.y < 0.2*/)
             {
-                RenderNavLight(camera, 0, dCamera_Ship);  // Red
-                RenderNavLight(camera, 1, dCamera_Ship);  // Green
+                // Visibility of navigation lights
+                vec3 shipForward = TransformPosition(vec3(mLength * 0.5f, 0.0f, 0.0f)) - ship.Position;
+                vec3 cameraToShip = camera.GetPosition() - ship.Position;
+                vec3 up(0.0f, 1.0f, 0.0f);
+                shipForward.y = 0.0f;
+                cameraToShip.y = 0.0f;
+                float angleDeg = degrees(orientedAngle(glm::normalize(shipForward), glm::normalize(cameraToShip), up));
+                if (angleDeg > -112.5f && angleDeg < -3.0f)
+                    RenderNavLight(camera, 1, dCamera_Ship);  // Green
+                else if (angleDeg >= -3.0f && angleDeg <= 3.0f)
+                {
+                    RenderNavLight(camera, 0, dCamera_Ship);  // Red
+                    RenderNavLight(camera, 1, dCamera_Ship);  // Green
+                }
+                else if (angleDeg > 3.0f && angleDeg < 112.5f)
+                    RenderNavLight(camera, 0, dCamera_Ship);  // Red
+                else
+                    RenderNavLight(camera, 2, dCamera_Ship);  // White
+                RenderNavLight(camera, 3, dCamera_Ship);      // White high
+                if (ship.LightPositions.size() > 4)
+                    RenderNavLight(camera, 4, dCamera_Ship);  // White high
             }
-            else if (angleDeg > 3.0f && angleDeg < 112.5f)
-                RenderNavLight(camera, 0, dCamera_Ship);  // Red
-            else
-                RenderNavLight(camera, 2, dCamera_Ship);  // White
-            RenderNavLight(camera, 3, dCamera_Ship);      // White high
-            if (ship.LightPositions.size() > 4)
-                RenderNavLight(camera, 4, dCamera_Ship);  // White high
         }
     }
 #pragma endregion
@@ -3181,7 +3983,7 @@ void Ship::Render(Camera& camera, Sky* sky)
 #pragma region Wireframe
     if (bOutline)
     {
-        mShaderWireframe->use();    // Shaders/unicolor.vert, Shaders/unicolor.frag, Shaders/unicolor.geom
+        mShaderWireframe->use();    // Misc/unicolor.vert, Misc/unicolor.frag, Misc/unicolor.geom
         mShaderWireframe->setVec3("lineColor", vec3(1.0f, 1.0f, 1.0f));
         mShaderWireframe->setMat4("model", World);
         mShaderWireframe->setMat4("view", camera.GetView());
@@ -3205,7 +4007,7 @@ void Ship::Render(Camera& camera, Sky* sky)
 #pragma region Pressure
     if (bPressure)
     {
-        mShaderPressure->use();     // Shaders/unicolor.vert, Shaders/unicolor.frag
+        mShaderPressure->use();     // Misc/unicolor.vert, Misc/unicolor.frag
         mShaderPressure->setVec3("lineColor", vec3(0.3f, 0.5f, 1.0f));
         mat4 model(1.0f);
         mShaderPressure->setMat4("model", model);
@@ -3223,7 +4025,7 @@ void Ship::Render(Camera& camera, Sky* sky)
 #pragma region Bounding box
     if (BBoxShape->bVisible)
 	{
-		mShaderUnicolor->use();     // Shaders/unicolor.vert", Shaders/unicolor.frag
+		mShaderUnicolor->use();     // Misc/unicolor.vert", Misc/unicolor.frag
 		mShaderUnicolor->setMat4("view", camera.GetView());
 		mShaderUnicolor->setMat4("projection", camera.GetProjection());
 		mShaderUnicolor->setMat4("model", World);
@@ -3240,15 +4042,23 @@ void Ship::Render(Camera& camera, Sky* sky)
         RenderForceRefWorld(camera, Archimede, f, Blue, true);
         RenderForceRefWorld(camera, Gravity, f, Gray, true);
         RenderForceRefWorld(camera, ResistanceHeave, f, Orange, true);
-        RenderForceRefWorld(camera, Thrust, 50.0f * f, Red, true);
+        if (ship.nPropeller == 2)
+        {
+            RenderForceRefWorld(camera, Thrust1, 50.0f * f, Red, true);
+            RenderForceRefWorld(camera, PropTorque1, 50.0f * f, Red, true);
+        }
+        RenderForceRefWorld(camera, Thrust2, 50.0f * f, Red, true);
+        RenderForceRefWorld(camera, PropTorque2, 50.0f * f, Red, true);
         RenderForceRefWorld(camera, ResistanceViscous, 50.0f * f, Pink, true);
         RenderForceRefWorld(camera, ResistanceWaves, 50.0f * f, Cyan, true);
-        RenderForceRefWorld(camera, BowThrust, 50.0f * f, Yellow, true);
+        RenderForceRefWorld(camera, BowThrust, 50.0f * f, Magenta, true);
+        RenderForceRefWorld(camera, SternThrust, 50.0f * f, Magenta, true);
         RenderForceRefWorld(camera, RudderLift, 50.0f * f, Green, true);
-        RenderForceRefWorld(camera, RudderDrag, 50.0f * f, Magenta, true);
-        RenderForceRefWorld(camera, WindFront, 50.0f * f, Gold, true);
-        RenderForceRefWorld(camera, WindRear, 50.0f * f, Gold, true);
-    
+        RenderForceRefWorld(camera, RudderDrag, 50.0f * f, Green, true);
+        RenderForceRefWorld(camera, WindFront, 500.0f * f, Violet, true);
+        RenderForceRefWorld(camera, WindRear, 500.0f * f, Violet, true);
+        RenderForceRefWorld(camera, ResistanceAir, 500.0f * f, Marron, true);
+
         RenderForceRefWorld(camera, COGSOG, 50.0f * f, Yellow, true);
     }
 #pragma endregion

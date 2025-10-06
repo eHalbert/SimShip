@@ -48,7 +48,11 @@ extern int      TexWakeBufferSize;
 extern GLuint   TexWakeVao;                         // Texture of wake made by a projection of vao
 extern int      TexWakeVaoSize;
 extern bool     bTexWakeByVAO;
-extern 
+extern GLuint   TexShadowMap;
+extern mat4     LightViewProjection;
+extern bool     g_bShipShadow;
+
+
 int SPECTRUM = 0;
 struct InstanceData 
 {
@@ -279,6 +283,7 @@ void Ocean::Init()
     mShaderOceanWake->setInt("reflectionTexture", 9);// reflection texture
     mShaderOceanWake->setInt("waterDUDV", 10);       // texture to add vibrations of the water for the reflection
     mShaderOceanWake->setInt("wakeBuffer", 11);     // wake of the ship
+    mShaderOceanWake->setInt("shadowMap", 12);      // shadow of the ship
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy / 2);
 
@@ -1504,7 +1509,7 @@ bool IsPatchInFrustum(const mat4& viewProjMatrix, const vec3& center, float radi
     vec3 absClipPos = glm::abs(glm::vec3(clipSpacePos));
     return (absClipPos.x <= w + margin) && (absClipPos.y <= w + margin) && (absClipPos.z <= w + margin);
 }
-void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bWaves, float LWL, float kelvinScale, float shipVelocity, float centerFore)
+void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bKelvinWakes, float LWL, float kelvinScale, float shipVelocity, float centerFore, int baseFroude)
 {
     int sumPatches = 0;
 #pragma region Instances
@@ -1663,12 +1668,12 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOceanWake->setVec3("oceanColor", OceanColor);
     
     mShaderOceanWake->setVec3("shipPosition", ShipPosition);
-    mShaderOceanWake->setBool("bWaves", bWaves);
+    mShaderOceanWake->setBool("bKelvinWakes", bKelvinWakes);
     mShaderOceanWake->setFloat("amplitude", 0.15f * shipVelocity);
     mShaderOceanWake->setFloat("kelvinScale", kelvinScale);
     mShaderOceanWake->setFloat("centerFore", centerFore);
-    int layer = int(100.0f * fabs(shipVelocity) / sqrt(9.81f * LWL)) + 20;   // Froude is (layer + 1) / 100
-    layer = glm::clamp(layer, 0, 99);
+    int layer = int(100.0f * fabs(shipVelocity) / sqrt(9.81f * LWL)) + baseFroude;   // Froude is (layer + 1) / 100
+    layer = glm::clamp(layer, 0, 100);
     //cout << layer << endl;
     mShaderOceanWake->setInt("texLayer", layer);
     mShaderOceanWake->setFloat("transparency", Transparency);
@@ -1689,6 +1694,8 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOceanWake->setFloat("time", 0.001f * t);
     mShaderOceanWake->setBool("bWake", g_bShipWake);
     mShaderOceanWake->setBool("bShowPatch", bShowPatch);
+    mShaderOceanWake->setMat4("matLightViewProj", LightViewProjection);
+    mShaderOceanWake->setBool("bShipShadow", g_bShipShadow);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mTexDisplacements);
@@ -1729,6 +1736,9 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     else
         glBindTexture(GL_TEXTURE_2D, TexWakeBuffer);
     glBindVertexArray(mVao);
+
+    glActiveTexture(GL_TEXTURE12);
+    glBindTexture(GL_TEXTURE_2D, TexShadowMap);
 
     for (auto& patch : vPatches)
     {

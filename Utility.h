@@ -53,6 +53,7 @@ void	check_opengl_error(string const& file, string const& function, int line);
 wstring GetExecutablePath();
 string	ReplaceBackSlash(string& chaine);
 string	RemoveExtensionAndPath(const string pathname);
+vector<string> ListFiles(const string& folder, const string& ext);
 
 uint32_t Log2OfPow2(uint32_t x);
 
@@ -125,12 +126,15 @@ template <class T> inline int AreAnglesSorted(T angle1, T angle2)
 		return -1;
 }
 
-vec2 LonLatToOpenGL(float lon, float lat);
+vec3 LonLatToOpenGL(float lon, float lat);
 vec2 OpenGLToLonLat(float x, float z);
-
-bool InterpolateTriangle(const vec3& p1, const vec3& p2, const vec3& p3, vec3& pos);
-vector<string> ListFiles(const string& folder, const string& ext);
 
 vec3 ConvertToFloat(vec3 v);
 void RGBtoHSL(const vec3& rgb, float& h, float& s, float& l);
 wstring SaveClientArea(HWND hwnd);
+
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4, vec2& p);
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4);
+
+string wstring_to_utf8(const wstring& wstr);
+wstring utf8_to_wstring(const string& str);

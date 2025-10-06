@@ -19,7 +19,7 @@ using namespace glm;
 
 #define MAX_BONE_INFLUENCE 4
 
-struct Vertex 
+struct sVertex 
 {
     vec3    Position;                       // position
     vec3    Normal;                         // normal
@@ -34,6 +34,7 @@ struct sTexture
     unsigned int    id;
     string          type;
     string          path;
+    bool            hasTransparency;
 };
 struct sMaterial 
 {
@@ -49,30 +50,29 @@ struct sMaterial
 class Mesh 
 {
 public:
-    // mesh Data
-    vector<Vertex>          vertices;
-    vector<unsigned int>    indices;
-    vector<sTexture>        textures;
-    sMaterial               material;
-    unsigned int            VAO = 0;
+    vector<sVertex>         vVertices;
+    vector<unsigned int>    vIndices;
+    bool                    HasTransparency;
+    vec3                    Center;
+    vec3                    TransformedCenter;
 
-    // constructor
-    Mesh(vector<Vertex> vertices, vector<unsigned int> indices, vector<sTexture> textures, sMaterial material)
+    Mesh(vector<sVertex> vertices, vector<unsigned int> indices, vector<sTexture> textures, sMaterial material, bool hasTransparency)
     {
-        this->vertices  = vertices;
-        this->indices   = indices;
-        this->textures  = textures;
+        this->vVertices  = vertices;
+        this->vIndices   = indices;
+        this->mvTextures  = textures;
         this->material  = material;
+        this->HasTransparency = hasTransparency;
 
-        // now that we have all the required data, set the vertex buffers and its attribute pointers.
+        // now that we have all the required data, set the vertex buffers and its attribute pointers
         setupMesh();
+        setCenter();
     }
     ~Mesh() { }
 
-    // render the mesh
-    void Draw(Shader &shader)
+    void Render(Shader &shader)
     {
-        bool has_texture = (bool)textures.size();
+        bool has_texture = (bool)mvTextures.size();
         shader.setBool("has_texture", has_texture);
 
         shader.setVec4("material.ambient", material.ambient);
@@ -88,12 +88,13 @@ public:
         unsigned int specularNr = 1;
         unsigned int normalNr   = 1;
         unsigned int heightNr   = 1;
-        for (unsigned int i = 0; i < textures.size(); i++)
+        for (unsigned int i = 0; i < mvTextures.size(); i++)
         {
             glActiveTexture(GL_TEXTURE0 + i); // active proper texture unit before binding
+            
             // retrieve texture number (the N in diffuse_textureN)
             string number;
-            string name = textures[i].type;
+            string name = mvTextures[i].type;
             if      (name == "texture_diffuse")     number = to_string(diffuseNr++);
             else if (name == "texture_specular")    number = to_string(specularNr++);   // transfer unsigned int to string
             else if (name == "texture_normal")      number = to_string(normalNr++);     // transfer unsigned int to string
@@ -102,80 +103,88 @@ public:
             // now set the sampler to the correct texture unit
             glUniform1i(glGetUniformLocation(shader.ID, (name + number).c_str()), i);
             // and finally bind the texture
-            glBindTexture(GL_TEXTURE_2D, textures[i].id);
+            glBindTexture(GL_TEXTURE_2D, mvTextures[i].id);
         }
 
-        // For the transparent windows
-        if (material.diffuse.a < 1.0f)
-            glDepthMask(GL_FALSE);
+        // For the transparent meshes
+        bool isTransparent = (material.diffuse.a < 1.0f);
+        if (isTransparent) glDepthMask(GL_FALSE);
 
         // Draw mesh
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(indices.size()), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(mVAO);
+        glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(vIndices.size()), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
 
-        // For the transparent windows
-        if (material.diffuse.a < 1.0f)
-            glDepthMask(GL_TRUE);
+        // Reset to default state
+        if (isTransparent) glDepthMask(GL_TRUE);
 
-        // always good practice to set everything back to defaults once configured.
         glActiveTexture(GL_TEXTURE0);
         glBindVertexArray(0);
     }
     void Bind()
     {
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(indices.size()), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(mVAO);
+        glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(vIndices.size()), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
     }
 
 private:
-    // render data 
-    unsigned int VBO = 0, EBO = 0;
+    vector<sTexture>        mvTextures;
+    sMaterial               material;
+    unsigned int            mVAO = 0;
+    unsigned int            mVBO = 0, mEBO = 0;
 
     // initializes all the buffer objects/arrays
     void setupMesh()
     {
         // create buffers/arrays
-        glGenVertexArrays(1, &VAO);
-        glGenBuffers(1, &VBO);
-        glGenBuffers(1, &EBO);
+        glGenVertexArrays(1, &mVAO);
+        glGenBuffers(1, &mVBO);
+        glGenBuffers(1, &mEBO);
 
-        glBindVertexArray(VAO);
+        glBindVertexArray(mVAO);
         // load data into vertex buffers
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, mVBO);
         // A great thing about structs is that their memory layout is sequential for all its items.
         // The effect is that we can simply pass a pointer to the struct and it translates perfectly to a vec3/2 array which
         // again translates to 3/2 floats which translates to a byte array.
-        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), &vertices[0], GL_STATIC_DRAW);  
+        glBufferData(GL_ARRAY_BUFFER, vVertices.size() * sizeof(sVertex), &vVertices[0], GL_STATIC_DRAW);  
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEBO);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, vIndices.size() * sizeof(unsigned int), &vIndices[0], GL_STATIC_DRAW);
 
         // set the vertex attribute pointers
         
         // vertex Positions
         glEnableVertexAttribArray(0);	
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)0);
         // vertex normals
         glEnableVertexAttribArray(1);	
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)offsetof(sVertex, Normal));
         // vertex texture coords
         glEnableVertexAttribArray(2);	
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)offsetof(sVertex, TexCoords));
         // vertex tangent
         glEnableVertexAttribArray(3);
-        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)offsetof(sVertex, Tangent));
         // vertex bitangent
         glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)offsetof(sVertex, Bitangent));
 		// ids
 		glEnableVertexAttribArray(5);
-		glVertexAttribIPointer(5, 4, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, m_BoneIDs));
+		glVertexAttribIPointer(5, 4, GL_INT, sizeof(sVertex), (void*)offsetof(sVertex, m_BoneIDs));
 		// weights
 		glEnableVertexAttribArray(6);
-		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, m_Weights));
+		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(sVertex), (void*)offsetof(sVertex, m_Weights));
         glBindVertexArray(0);
+    }
+    void setCenter()
+    {
+        if (vVertices.empty())
+            Center = vec3(0.0f);
+        for (const auto& v : vVertices)
+            Center += v.Position;
+        Center /= static_cast<float>(vVertices.size());
     }
 };
 

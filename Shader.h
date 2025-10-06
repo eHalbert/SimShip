@@ -28,6 +28,10 @@ public:
     Shader(const string& vertexPath, const string& fragmentPath, const string& geometryPath = "", const string& computePath = "", const string& tessControlPath = "", const string& tessEvaluationPath = "")
     {
         Load(vertexPath, fragmentPath, geometryPath, computePath, tessControlPath, tessEvaluationPath);
+        //if (vertexPath.length() > 0)
+        //    cout << vertexPath << "  " << ID << endl;
+        //else if (computePath.length() > 0)
+        //    cout << computePath << "  " << ID << endl;
     }
     ~Shader() 
     {

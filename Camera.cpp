@@ -47,68 +47,100 @@ void Camera::SetZoom(float fovy)
 void Camera::RotateCamera(float yaw, float pitch, float roll)
 {
     mat4 rotationMatrix =
-        glm::rotate(mat4(1.0f), yaw, vec3(0, 1.0f, 0)) *
+        glm::rotate(mat4(1.0f), yaw, vec3(0.0f, 1.0f, 0.0f)) *
         glm::rotate(mat4(1.0f), pitch, mRight) *
         glm::rotate(mat4(1.0f), roll, mDirection);
 
     mDirection = vec3(glm::normalize(rotationMatrix * vec4(mDirection, 0.f)));
-    mUp = vec3(0, 1, 0); //vec3(glm::normalize(rotationMatrix * vec4(mUp, 0.f)));
+    mUp = vec3(0.0f, 1.0f, 0.0f);
     mRight = glm::normalize(cross(mUp, mDirection));
 }
 void Camera::MoveCamera(const vec3& delta)
 {
     mPosition += delta;
 }
-void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& view1Target)
+void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& viewPos, vec3& viewTarget)
 {
     mIsUnchanged = true;
+    static eCameraMode previousMode = mCurrentMode;
 
-    float baseT = 0.1f;
+    float baseT = 0.15f;
     float t = GetInterpolationValue(baseT);
 
     // Mouse delta management
     vec2 mouseMove = mMousePos - mMousePosPrev;
     mMousePosPrev = mMousePos;
 
-    // Initialisation des targets la première frame
+    // Initializing targets in the first frame
     if (bFirstUpdate)
     {
         mPositionTarget = mPosition;
         mDirectionTarget = mDirection;
         mUpTarget = mUp;
         mRightTarget = mRight;
+        t = 1.0f;   // No smooth transition, go directly to the new position
         bFirstUpdate = false;
     }
 
-    // Flag pour savoir si la caméra a changé de mode
+    // Flag to know if the camera has changed mode
     static bool bCameraModeChanged = false;
 
-    //constexpr int CAMERA_MODE_COUNT = 5;
-
-    // Gestion du changement de mode de caméra
-    if (mKeyboardState[KeyboardControls::PreviousCamera] || mKeyboardState[KeyboardControls::NextCamera])
+    // Camera mode change management
+    if (mKeyboardState[KeyboardControls::Orbital])
     {
-        int dir = mKeyboardState[KeyboardControls::NextCamera] ? 1 : -1;
-        mCurrentMode = static_cast<eCameraMode>((CAMERA_MODE_COUNT + static_cast<int>(mCurrentMode) + dir) % CAMERA_MODE_COUNT);
-        mKeyboardState[KeyboardControls::PreviousCamera] = false;
-        mKeyboardState[KeyboardControls::NextCamera] = false;
-
-        bCameraModeChanged = true;  // le mode a changé
+        mCurrentMode = ORBITAL;
+        mKeyboardState[KeyboardControls::Orbital] = false;
+        bCameraModeChanged = true;
+        mIsUnchanged = false;
+    }
+    else if (mKeyboardState[KeyboardControls::Bridge])
+    {
+        mCurrentMode = BRIDGE;
+        mKeyboardState[KeyboardControls::Bridge] = false;
+        bCameraModeChanged = true;
+        mIsUnchanged = false;
+    }
+    else if (mKeyboardState[KeyboardControls::Fps])
+    {
+        mCurrentMode = FPS;
+        mKeyboardState[KeyboardControls::Fps] = false;
+        bCameraModeChanged = true;
         mIsUnchanged = false;
     }
 
-    // Si on vient de changer de mode on réinitialise les cibles à l'état actuel
+    // If we just changed mode we reset the targets to the current state
     if (bCameraModeChanged)
     {
-        mPositionTarget = mPosition;
-        mDirectionTarget = mDirection;
-        mUpTarget = vec3(0, 1, 0); //mUp;
-        mRightTarget = mRight;
+        if (previousMode == FPS && mCurrentMode == ORBITAL)
+        {
+            // FPS -> ORBITAL :
+            mOrbitRadius = glm::length(orbitalTarget - mPosition);
+            mOrbitYaw = atan2(mPosition.z - orbitalTarget.z, mPosition.x - orbitalTarget.x);
+            mOrbitPitch = -asin((orbitalTarget.y - mPosition.y) / mOrbitRadius);
+            mTargetPos = orbitalTarget;
+            mDirection = glm::normalize(mTargetPos - mPosition);
+            mUp = vec3(0, 1, 0);
+            mRight = glm::normalize(glm::cross(mUp, mDirection));
+            mDirectionTarget = mDirection;
+            mUpTarget = mUp;
+            mRightTarget = mRight;
+        }
+        else
+        {
+            mPositionTarget = mPosition;
+            if (mCurrentMode == BRIDGE)
+                mDirectionTarget = mDirection = viewTarget;
+            else
+                mDirectionTarget = mDirection;
+            mUpTarget = vec3(0.0f, 1.0f, 0.0f);
+            mRightTarget = mRight;
+        }
 
         bCameraModeChanged = false;
     }
+    previousMode = mCurrentMode;
 
-    // ===== ORBITAL MODE ===== //
+    // ===== ORBITAL MODE =====
     if (mCurrentMode == eCameraMode::ORBITAL)
     {
         if (mMouseButtonState[MouseButtons::Left] && (mouseMove.x || mouseMove.y))
@@ -128,15 +160,46 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
 
         vec3 directionTarget = normalize(mTargetPos - orbitalPosTarget);
         vec3 rightTarget = normalize(cross(vec3(0, 1, 0), directionTarget));
-        vec3 upTarget = vec3(0, 1, 0); //normalize(cross(directionTarget, rightTarget));
+        vec3 upTarget = vec3(0, 1, 0);
 
         mPosition = glm::mix(mPosition, orbitalPosTarget, t);
         mDirection = glm::normalize(glm::mix(mDirection, directionTarget, t));
-        mUp = vec3(0, 1, 0); //glm::normalize(glm::mix(mUp, mUpTarget, t));
+        mUp = vec3(0.0f, 1.0f, 0.0f); 
         mRight = glm::normalize(glm::mix(mRight, mRightTarget, t));
     }
 
-    // ===== FPS MODE ===== //
+    // ===== BRIDGE MODE =====
+    else if (mCurrentMode == eCameraMode::BRIDGE)
+    {
+        bool cameraDirty = false;
+        float yaw = 0, pitch = 0;
+
+        if (mMouseButtonState[MouseButtons::Left] && (mouseMove.x || mouseMove.y))
+        {
+            yaw = -mRotateSpeed * mouseMove.x;
+            pitch = mRotateSpeed * mouseMove.y;
+            cameraDirty = true;
+        }
+        
+        if (cameraDirty)
+        {
+            mat4 rotationMatrix = glm::rotate(mat4(1.0f), yaw, vec3(0, 1.0f, 0)) * glm::rotate(mat4(1.0f), pitch, mRightTarget);
+
+            mDirectionTarget = glm::normalize(vec3(rotationMatrix * vec4(mDirectionTarget, 0.f)));
+            mUpTarget = glm::normalize(vec3(rotationMatrix * vec4(mUpTarget, 0.f)));
+            mRightTarget = glm::normalize(glm::cross(mUpTarget, mDirectionTarget));
+
+            mIsUnchanged = false;
+        }
+
+        // Interpolation to target
+        mPosition = viewPos;
+        mDirection = glm::normalize(glm::mix(mDirection, mDirectionTarget, t));
+        mUp = vec3(0.0f, 1.0f, 0.0f);
+        mRight = glm::normalize(glm::mix(mRight, mRightTarget, t));
+    }
+
+    // ===== FPS MODE =====
     else if (mCurrentMode == eCameraMode::FPS)
     {
         bool cameraDirty = false;
@@ -154,24 +217,12 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
             cameraDirty = true;
         }
 
-        if (mKeyboardState[KeyboardControls::RollLeft])
-        {
-            roll -= mRotateSpeed * 2.f;
-            cameraDirty = true;
-        }
-
-        if (mKeyboardState[KeyboardControls::RollRight])
-        {
-            roll += mRotateSpeed * 2.f;
-            cameraDirty = true;
-        }
-
-        if (mKeyboardState[KeyboardControls::MoveForward]) { moveVec += moveStep * mDirection; cameraDirty = true; }
+        if (mKeyboardState[KeyboardControls::MoveForward])  { moveVec += moveStep * mDirection; cameraDirty = true; }
         if (mKeyboardState[KeyboardControls::MoveBackward]) { moveVec += -moveStep * mDirection; cameraDirty = true; }
-        if (mKeyboardState[KeyboardControls::MoveLeft]) { moveVec += moveStep * mRight;     cameraDirty = true; }
-        if (mKeyboardState[KeyboardControls::MoveRight]) { moveVec -= moveStep * mRight;     cameraDirty = true; }
-        if (mKeyboardState[KeyboardControls::MoveUp]) { moveVec += moveStep * mUp;        cameraDirty = true; }
-        if (mKeyboardState[KeyboardControls::MoveDown]) { moveVec -= moveStep * mUp;        cameraDirty = true; }
+        if (mKeyboardState[KeyboardControls::MoveLeft])     { moveVec += moveStep * mRight;     cameraDirty = true; }
+        if (mKeyboardState[KeyboardControls::MoveRight])    { moveVec -= moveStep * mRight;     cameraDirty = true; }
+        if (mKeyboardState[KeyboardControls::MoveUp])       { moveVec += moveStep * mUp;        cameraDirty = true; }
+        if (mKeyboardState[KeyboardControls::MoveDown])     { moveVec -= moveStep * mUp;        cameraDirty = true; }
 
         if (cameraDirty)
         {
@@ -191,55 +242,7 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
 
         mPosition = glm::mix(mPosition, mPositionTarget, t);
         mDirection = glm::normalize(glm::mix(mDirection, mDirectionTarget, t));
-        mUp = vec3(0, 1, 0); //glm::normalize(glm::mix(mUp, mUpTarget, t));
-        mRight = glm::normalize(glm::mix(mRight, mRightTarget, t));
-    }
-
-    // ===== FIX MODE ===== //
-    else if (mCurrentMode == eCameraMode::IN_FIXED)
-    {
-        LookAt(view1Pos, view1Target);
-
-        // Position fixe pour ce mode, mais on pourrait adapter
-        mPosition = view1Pos;
-        mDirection = normalize(view1Target - view1Pos);
-        mRight = normalize(cross(vec3(0, 1, 0), mDirection));
-        mUp = vec3(0, 1, 0); //normalize(cross(mDirection, mRight));
-
-        mPositionTarget = mPosition;
-        mDirectionTarget = mDirection;
-        mUpTarget = mUp;
-        mRightTarget = mRight;
-    }
-
-    // ===== FREE MODE (VIEW1/VIEW2) ===== //
-    else if (mCurrentMode == eCameraMode::IN_FREE || mCurrentMode == eCameraMode::OUT_FREE)
-    {
-        bool cameraDirty = false;
-        float yaw = 0, pitch = 0;
-
-        if (mMouseButtonState[MouseButtons::Left] && (mouseMove.x || mouseMove.y))
-        {
-            yaw = -mRotateSpeed * mouseMove.x;
-            pitch = mRotateSpeed * mouseMove.y;
-            cameraDirty = true;
-        }
-
-        if (cameraDirty)
-        {
-            mat4 rotationMatrix = glm::rotate(mat4(1.0f), yaw, vec3(0, 1.0f, 0)) * glm::rotate(mat4(1.0f), pitch, mRightTarget);
-
-            mDirectionTarget = glm::normalize(vec3(rotationMatrix * vec4(mDirectionTarget, 0.f)));
-            mUpTarget = glm::normalize(vec3(rotationMatrix * vec4(mUpTarget, 0.f)));
-            mRightTarget = glm::normalize(glm::cross(mUpTarget, mDirectionTarget));
-
-            mIsUnchanged = false;
-        }
-
-        // Interpolation vers la target (à garder)
-        mPosition = view1Pos;
-        mDirection = glm::normalize(glm::mix(mDirection, mDirectionTarget, t));
-        mUp = vec3(0, 1, 0); //glm::normalize(glm::mix(mUp, mUpTarget, t));
+        mUp = vec3(0.0f, 1.0f, 0.0f);
         mRight = glm::normalize(glm::mix(mRight, mRightTarget, t));
     }
 
@@ -249,13 +252,14 @@ void Camera::Animate(float deltaT, vec3& orbitalTarget, vec3& view1Pos, vec3& vi
 // Get
 float Camera::GetInterpolationValue(float t) const
 {
-    switch (mInterpolation) {
-    case eInterpolation::Linear:      return LinInterp(t);
-    case eInterpolation::SmoothStep:  return SmoothStepInterp(t);
-    case eInterpolation::EaseIn:      return EaseInInterp(t);
-    case eInterpolation::EaseOut:     return EaseOutInterp(t);
-    case eInterpolation::EaseInOut:   return EaseInOutInterp(t);
-    default:                             return t;
+    switch (mInterpolation) 
+    {
+    case eInterpolation::Linear:        return LinInterp(t);
+    case eInterpolation::SmoothStep:    return SmoothStepInterp(t);
+    case eInterpolation::EaseIn:        return EaseInInterp(t);
+    case eInterpolation::EaseOut:       return EaseOutInterp(t);
+    case eInterpolation::EaseInOut:     return EaseInOutInterp(t);
+    default:                            return t;
     }
 }
 float Camera::GetNorthAngleDEG()

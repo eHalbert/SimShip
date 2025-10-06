@@ -58,6 +58,7 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 #include "Ship.h"
 #include "Markup.h"
 #include "Clouds.h"
+#include "Ini.h"
 
 #pragma warning( push )
 #pragma warning( disable : 4244 ) // conversion de 'x' en 'y', perte possible de données
@@ -70,10 +71,10 @@ namespace fs = std::filesystem;
 
 GLFWwindow        * g_hWindow			= nullptr;
 HWND				g_hWnd				= nullptr;
-uint32_t			g_WindowW			= 1600;
-uint32_t			g_WindowH			= 1040;
-uint32_t			g_WindowW_2			= 800;
-uint32_t			g_WindowH_2			= 520;
+uint32_t			g_WindowW			= 1920;
+uint32_t			g_WindowH			= 1080;
+uint32_t			g_WindowW_2			= 960;
+uint32_t			g_WindowH_2			= 540;
 uint32_t			g_WindowX			= 0;
 uint32_t			g_WindowY			= 0;
 bool                g_IsFullScreen		= false;
@@ -82,6 +83,7 @@ HANDLE				g_hConsole;					// Handle of the console (can be shown and can be hidd
 NVGcontext        * g_Nvg				= nullptr;
 float				g_DevicePixelRatio = 1.0f;
 wstring				g_CaptureName;
+eh::Timer			g_Chrono;
 
 // ImGui windows
 bool                g_bShowSceneWindow			= false;	// [ F2 ]
@@ -90,40 +92,45 @@ bool                g_bShowStatusBar			= false;	// [ F4 ]
 bool                g_bShowAutopilotWindow		= false;	// [ F5 ]
 bool                g_bShowOceanAnalysisWindow	= false;
 bool				g_bShowShortcuts			= false;
+bool                g_bShowShipForcesWindows	= false;	// [ F6 ]
 
 SoundManager* SoundManager::instance	= nullptr; // Initialisation du pointeur statique (sinon, à placer dans un fichier Sound.cpp)
 SoundManager      * g_SoundMgr			= nullptr;
 unique_ptr<Sound>	g_SoundSeagull[8];
 unique_ptr<Sound>	g_SoundHorn;
 bool                g_bSoundSeagull		= false;
+unique_ptr<Sound>	g_SoundRain;
+bool				g_bSoundRain = false;
 
-// POSITION //////////////////////////////////////
+// VIEWS //////////////////////////////////////////
 vec2                g_InitialPosition	= vec2(-5.09732676, 48.47529221);
 vector<sPositions>	g_vPositions;					// List of positions to be used by the ship
 int					g_NoPosition		= 0;		// The number of the position in the list		
 Camera				g_Camera;
+eBridgeView			g_eBridgeView		= eBridgeView::WHEEL;	// Index of the view (1,2,3) for the BRIDGE mode of the camera
 bool				g_bBinoculars		= false;
 bool				g_bLowIntensity		= false;
 bool				g_bNightVision		= false;
 
-// TIME //////////////////////////////////////////
+// TIME ////////////////////////////////////////////
 LARGE_INTEGER		g_Frequency;
 LARGE_INTEGER		g_LastTime, g_CurrentTime;
 int					g_FrameCount		= 0;
 int					g_Fps				= 0;
-eh::Timer			g_Timer;
+eh::Timer			g_TimerShipMotion;
+bool				g_bChrono			= false;
 float				g_TimeSpeed			= 1.0f;
 bool				g_bPause			= false;
 bool				g_bVsync			= false;
 
-// SHADERS ////////////////////////////////////////
+// SHADERS ///////////////////////////////////////////
 unique_ptr<Shader>  g_ShaderSun;
 unique_ptr<Shader>	g_ShaderCamera;
 unique_ptr<Shader>  g_ShaderPostProcessing;
 unique_ptr<Shader>  g_ShaderRain;
 unique_ptr<Shader>  g_ShaderFXAA;
 
-// FRAMEBUFFERS ////////////////////////////////////
+// FRAMEBUFFERS //////////////////////////////////////
 GLuint              FBO_REFLECTION		= 0;        // Used only for the ship reflection 
 GLuint              TexReflectionColor	= 0;		// Used by the ocean rendering
 GLuint              TexReflectionDepth	= 0;		// To be deleted?
@@ -146,34 +153,45 @@ GLuint              TexRainDepth		= 0;
 
 unique_ptr<ScreenQuad> g_ScreenQuadPost;
 
-// OBJECTS ///////////////////////////////////////
+// OBJECTS //////////////////////////////////////////
 bool				g_bWireframe		= false;   // For the entire scene
 unique_ptr<Grid>    g_Grid;
 bool				g_bGridVisible		= false;
 unique_ptr<Cube>    g_Axe;
 unique_ptr<Sphere>  g_FloatingBall;
 unique_ptr<Model>   g_ArrowWind;
-unique_ptr<Model>   g_Pier;
 
-// WIND //////////////////////////////////////////
+// WIND /////////////////////////////////////////////
 vec2				g_Wind				= vec2(0.0f);
 float				g_WindDirectionDEG	= 0.0f;
 float				g_WindSpeedKN		= 1.0f;
 
-// SHIP //////////////////////////////////////////
+// SHIP ////////////////////////////////////////////
 unique_ptr<Ship>    g_Ship;						// The ship selected
 vector<sShip>       g_vShips;					// The list of ships
-int					g_NoShip			= 5;    // The number of the ship in the list
+int					g_NoShip			= 0;    // The number of the ship in the list
 bool                g_bShipWake			= true; // Display the wake (texture around the ship)
 int                 g_LowMass			= 0;	// Half of the mass (for ImGui selection purpose)
 int					g_HighMass			= 0;	// Double of the mass (for ImGui selection purpose)
+bool				g_bReset			= true;	// Inhibit motion during a short period
 
-vec4                g_CtrlThrottle		= vec4(0.0f);
-float               g_CtrlThrottleHigh	= 0.0f;
-float				g_CtrlThrottleLow	= 0.0f;
+vec4                g_CtrlPanel			= vec4(0.0f);
+vec4                g_CtrlThrottle1		= vec4(0.0f);
+float               g_CtrlThrottleHigh1	= 0.0f;
+float				g_CtrlThrottleLow1	= 0.0f;
+vec4                g_CtrlThrottle2		= vec4(0.0f);
+float               g_CtrlThrottleHigh2 = 0.0f;
+float				g_CtrlThrottleLow2	= 0.0f;
 vec4                g_CtrlRudder		= vec4(0.0f);
 float               g_CtrlRudderLeft	= 0.0f;
 float				g_CtrlRudderRight	= 0.0f;
+vec4                g_CtrlBowThruster = vec4(0.0f);
+float               g_CtrlBowThrusterLeft = 0.0f;
+float				g_CtrlBowThrusterRight = 0.0f;
+vec4                g_CtrlSternThruster = vec4(0.0f);
+float               g_CtrlSternThrusterLeft = 0.0f;
+float				g_CtrlSternThrusterRight = 0.0f;
+
 vec4                g_CtrlAutopilotCMD	= vec4(0.0f);
 vec4                g_CtrlAutopilotM1	= vec4(0.0f);
 vec4                g_CtrlAutopilotM10	= vec4(0.0f);
@@ -185,14 +203,14 @@ vec4				g_CtrlTimeMinute	= vec4(0.0f);
 vec4                g_CtrlWind			= vec4(0.0f);
 vec4                g_CtrlNow			= vec4(0.0f);
 
-// SKY ///////////////////////////////////////////
+// SKY /////////////////////////////////////////////
 unique_ptr<Sky>    g_Sky;
 unique_ptr<ScreenQuad> g_ScreenQuadCloud;   // Used with the background shader to Draw the clouds
 unique_ptr<VolumetricClouds> g_Clouds;
 unique_ptr<Shader>  g_ShaderBackground;
 bool				g_bSkyVisible			= true;
 
-// OCEANS ////////////////////////////////////////
+// OCEANS //////////////////////////////////////////
 unique_ptr<Ocean>   g_Ocean;
 bool				g_bOceanVisible			= true;
 bool				g_bOceanWireframe		= false;
@@ -200,44 +218,67 @@ bool				g_bTextureDisplay		= false;	// Display the 2D textures Displacement, Gra
 bool				g_bTextureWakeDisplay	= false;	// Display the 2D texture Trail of the ship
 bool                g_bShowOceanCut;					// Display a cut of a patch of ocean
 unique_ptr<QuadTexture> g_QuadTexture;					// For the rendering of the 2D textures on the screen (debug)
+bool				g_bShipShadow			= true;
 
-// TERRAIN ///////////////////////////////////////
-bool                g_bShowTerrain			= false;
+// TERRAIN //////////////////////////////////////////
+bool                g_bShowTerrain			= true;
 vector<sTerrain>    g_vTerrains;
+int					g_idxHouat = 0;
+unique_ptr<Model>   g_Pier;
+unique_ptr<Model>   g_Port;
+vector<sLine>		g_vPortLines;
 unique_ptr<Markup>  g_Markup;
 
-//////////////////////////////////////////////////
+/////////////////////////////////////////////////////
 vector<pair<string, string>> vShortcuts = {
+	{ "C", "Orbital camera" },
+	{ "B", "Bridge camera" },
+	{ "WSADX", "Bridge views" },
+	{ "F", "FPS camera" },
 	{ "W", "Forward" },
 	{ "S", "Back" },
 	{ "A", "Left" },
 	{ "D", "Right" },
 	{ "Q", "Up" },
 	{ "E", "Down" },
-	{ "C", "Next camera" },
-	{ "E", "Previous camera" },
 	{ "I", "Interpolation of camera" },
 	{ "R click", "Binoculars" },
+	{ "N", "Night vision" },
 	{ "T", "Textures 1 debug" },
 	{ "I", "Textures 2 debug" },
 	{ "Space", "Pause" },
 	{ "Esc", "Quit" },
-	{ "8", "Engine +" },
-	{ "5", "Engine stop" },
-	{ "2", "Engine -" },
-	{ "Del", "BowThruster left" },
-	{ "End", "BowThruster stop" },
-	{ "Page dn", "BowThruster right" },
-	{ "Left", "Rudder left" },
-	{ "Down", "Rudder stop" },
-	{ "Right", "Rudder right" },
-	{ "H", "Ship horn" },
 	{ "F2", "Scene settings" },
 	{ "F3", "Ship settings" },
 	{ "F4", "Status bar" },
 	{ "F5", "Autopilot settings" },
+	{ "F6", "Ship Forces" },
 	{ "F8", "Window capture" },
 	{ "F11", "Full screen" },
+	{ "1 ... 0", "Select ship #" },
+	{ "NUM 7", "Engine Left +" },
+	{ "NUM 4", "Engine Left stop" },
+	{ "NUM 1", "Engine Left -" },
+	{ "NUM 8", "Both engines +" },
+	{ "NUM 5", "Both engines stop" },
+	{ "NUM 2", "Both engines -" },
+	{ "NUM 9", "Engine Right +" },
+	{ "NUM 6", "Engine Right stop" },
+	{ "NUM 6", "Engine Right -" },
+	{ "Ins", "Bow Thruster left" },
+	{ "Home", "Bow Thruster stop" },
+	{ "Page up", "Bow Thruster right" },
+	{ "Del", "Stern Thruster left" },
+	{ "End", "Stern Thruster stop" },
+	{ "Page dn", "Stern Thruster right" },
+	{ "Left", "Rudder left" },
+	{ "Down", "Rudder stop" },
+	{ "Right", "Rudder right" },
+	{ "L", "Ship lights" },
+	{ "H", "Ship horn" },
+	{ "NUM /", "Both engine 7/10" },
+	{ "NUM +", "Increase speed" },
+	{ "NUM -", "Decrease speed" },
 };
 
 void	InitScene();
@@ -246,9 +287,17 @@ void	InitImGUI();
 void	InitNanoVg();
 void	InitFPSCounter();
 void	LoadPositions();
+void	LoadPositions();
+void	SavePositions();
+void	SetPosition();
 void	LoadModels();
 void    LoadTerrains();
+void	LoadPortContour();
+bool	CheckCrossingPort();
 void    LoadShips();
+void	LoadShips();
+void	SaveShips();
+void	SetShip(int n);
 void    LoadSounds();
 void    UpdateSounds();
 void	UpdateFPS();

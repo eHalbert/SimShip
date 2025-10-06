@@ -88,7 +88,7 @@ public:
         
         mvParticles[mActiveParticles].life = shortLife + (rand() % lifeSpan) / 10.0f;
 
-        float gray = 0.8f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 0.2f;
+        float gray = 0.9f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 0.1f;
         mvParticles[mActiveParticles].color = vec4(gray, gray, gray, 0.8f);
 
         mActiveParticles++;

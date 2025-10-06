@@ -187,6 +187,16 @@ string RemoveExtensionAndPath(const string pathname)
     int dash = pathname.find_last_of("/");
     return pathname.substr(dash + 1, period - dash - 1);
 }
+vector<string> ListFiles(const string& folder, const string& ext)
+{
+    vector<string> files;
+    for (const auto& entry : filesystem::directory_iterator(folder))
+    {
+        if (entry.path().extension() == ext)
+            files.push_back(entry.path().string());
+    }
+    return files;
+}
 
 uint32_t Log2OfPow2(uint32_t x)
 {
@@ -284,11 +294,17 @@ bool IsInRect(vec4& rect, vec2& point)
 {
     return (point.x >= rect.x && point.x <= rect.x + rect.z && point.y >= rect.y && point.y <= rect.y + rect.w);
 }
+bool IsInCircle(const vec3& circle, const vec2& point)
+{
+    float dx = point.x - circle.x;
+    float dy = point.y - circle.y;
+    return (dx * dx + dy * dy) <= (circle.z * circle.z);
+}
 
 const float EARTH_RADIUS = 6371000.0; // Mean radius of the Earth in meters
 const vec2 REFERENCE_POINT(-2.94097114, 47.38162231); // Houat
 
-vec2 LonLatToOpenGL(float lon, float lat)
+vec3 LonLatToOpenGL(float lon, float lat)
 {
     float dLon = glm::radians(lon - REFERENCE_POINT.x);
     float dLat = glm::radians(lat - REFERENCE_POINT.y);
@@ -296,7 +312,7 @@ vec2 LonLatToOpenGL(float lon, float lat)
     float x = EARTH_RADIUS * dLon * cos(glm::radians(REFERENCE_POINT.y));
     float z = -EARTH_RADIUS * dLat;
 
-    return vec2(x, z);
+    return vec3(x, 0.0f, z);
 }
 vec2 OpenGLToLonLat(float x, float z)
 {
@@ -304,37 +320,6 @@ vec2 OpenGLToLonLat(float x, float z)
     float lat = REFERENCE_POINT.y - glm::degrees(z / EARTH_RADIUS);
 
     return vec2(lon, lat);
-}
-bool InterpolateTriangle(const vec3& p1, const vec3& p2, const vec3& p3, vec3& pos)
-{
-    // Calcul des coordonnées barycentriques
-    float det = ((p2.z - p3.z) * (p1.x - p3.x) + (p3.x - p2.x) * (p1.z - p3.z));
-    float w1 = ((p2.z - p3.z) * (pos.x - p3.x) + (p3.x - p2.x) * (pos.z - p3.z)) / det;
-    float w2 = ((p3.z - p1.z) * (pos.x - p3.x) + (p1.x - p3.x) * (pos.z - p3.z)) / det;
-    float w3 = 1.0f - w1 - w2;
-
-    // Vérification si le point est à l'intérieur du triangle
-    if (w1 >= 0 && w2 >= 0 && w3 >= 0 && w1 <= 1 && w2 <= 1 && w3 <= 1)
-    {
-        // Interpolation de la valeur y
-        pos.y = w1 * p1.y + w2 * p2.y + w3 * p3.y;
-        return true;
-    }
-    else
-    {
-        // Le point est en dehors du triangle
-        return false;
-    }
-}
-vector<string> ListFiles(const string& folder, const string& ext)
-{
-    vector<string> files;
-    for (const auto& entry : filesystem::directory_iterator(folder))
-    {
-        if (entry.path().extension() == ext)
-            files.push_back(entry.path().string());
-    }
-    return files;
 }
 vec3 ConvertToFloat(vec3 v)
 {
@@ -373,7 +358,7 @@ wstring GetNextAvailableCaptureName(const wstring& folderPath)
 {
     WIN32_FIND_DATAW ffd;
     HANDLE hFind = INVALID_HANDLE_VALUE;
-    wstring searchPath = folderPath + L"\\SimWaves - Capture *.png";
+    wstring searchPath = folderPath + L"\\SimShip - Capture *.png";
     vector<int> numbers;
 
     // Lister les fichiers correspondant au motif
@@ -413,7 +398,7 @@ wstring GetNextAvailableCaptureName(const wstring& folderPath)
 
     // Générer le nom de fichier
     wstringstream ss;
-    ss << L"SimWaves - Capture " << std::setw(2) << std::setfill(L'0') << nextNum << L".png";
+    ss << L"SimShip - Capture " << std::setw(2) << std::setfill(L'0') << nextNum << L".png";
     return ss.str();
 }
 void SaveHBITMAP(HBITMAP bitmap, HDC hDC, wchar_t* filename)
@@ -562,4 +547,54 @@ wstring SaveClientArea(HWND hwnd)
     DeleteDC(hTargetDC);
 
     return name;
+}
+
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4, vec2& p)
+{
+    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (denom == 0)
+        return 0;		// the segments are parallel
+
+    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+    {
+        p.x = p1.x + t * (p2.x - p1.x);
+        p.y = p1.y + t * (p2.y - p1.y);
+        return true;
+    }
+    else
+        return false;	// the segments do not intersect
+}
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4)
+{
+    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (denom == 0)
+        return 0;		// the segments are parallel
+
+    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+        return true;
+    else
+        return false;	// the segments do not intersect
+}
+
+string wstring_to_utf8(const wstring& wstr)
+{
+    if (wstr.empty()) return string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(),
+        (int)wstr.size(), NULL, 0, NULL, NULL);
+    string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(),
+        (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+}
+wstring utf8_to_wstring(const string& str)
+{
+    if (str.empty()) return wstring();
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
+    wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
 }

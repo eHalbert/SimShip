@@ -44,6 +44,7 @@ using namespace glm;
 #include "Sound.h"
 #include "Timer.h"
 #include "Particles.h"
+#include "Flag.h"
 
 struct sTriangle
 {
@@ -68,6 +69,9 @@ struct sForce
 	float		Magnitude	= 0.0f;
 	vec3		Vector		= vec3(0.0f);
 	vec3		Position	= vec3(0.0f);
+	string		Name		= "";
+	int			Decimal		= 0;
+	string		Unit		= "N";
 };
 enum eRendering { TRIANGLES = 0, BASIC_LIGHT, SUN };
 
@@ -97,6 +101,7 @@ public:
 	void	SetMass() { mMass = ship.Mass_t * 1000.0f; }
 	float	GetLength() { return mLength; }
 	float	GetWidth() { return mWidth; }
+	sBBvec3 GetBoundingBox();
 
 	void	ResetVelocities();
 	vec3	TransformPosition(vec3 v);
@@ -109,6 +114,7 @@ public:
 	void	RenderWakeVao(Camera& camera);
 	void	RenderContour(Camera& camera);
 	void	RenderReflexion(Camera& camera, Sky* sky);
+	void	RenderShadow(Camera& camera, Sky* sky);
 	void	Render(Camera& camera, Sky* sky);
 
 	GLuint	GetTraceID();
@@ -124,7 +130,6 @@ public:
 	float				Yaw					= 0.0f;
 	float				Pitch				= 0.0f;
 	float				Roll				= 0.0f;
-	float				YawRate				= 0.0f;
 	float				HDG					= 0.0f;
 	float				SOG					= 0.0f;
 	float				COG					= 0.0f;
@@ -146,25 +151,36 @@ public:
 	float				YawVelocity			= 0.0f;
 	float				WindAcceleration	= 0.0f;
 	float				WindVelocity		= 0.0f;
-	float				VariationYawSigned	= 0.0f;
 	float				LinearVelocity		= 0.0f;
 	float				DriftVelocity		= 0.0f;
+	float				DriftAngleDeg		= 0.0f;
 	float				Velocity			= 0.0f;
+	float				TurnDiameter_m		= 0.0f;
+	float				TurnDiameter_L		= 0.0f;
+	float				WindApparent		= 0.0f;
 
 	// Engine
-	int					PowerCurrentStep	= 0;
-	float				PowerApplied		= 0.0f;		// kW
-	float				PowerRpm			= 0.0f;
+	int					PowerCurrentStep1	= 0;
+	float				PowerApplied1		= 0.0f;		// kW
+	float				PropRpm1			= 0.0f;
+	int					PowerCurrentStep2	= 0;
+	float				PowerApplied2		= 0.0f;		// kW
+	float				PropRpm2			= 0.0f;
 
 	// Rudder
 	float				RudderCurrentStep	= 0.0f;
 	float				RudderAngleDeg		= 0.0f;		// Deg
 	
-	// Bow Thruster
+	// Bow Thruster 1
 	int					BowThrusterCurrentStep = 0;
 	float				BowThrusterApplied	= 0.0f;		// kW
 	float				BowThrusterRpm		= 0.0f;
 	
+	// Bow Thruster 2
+	int					SternThrusterCurrentStep = 0;
+	float				SternThrusterApplied = 0.0f;		// kW
+	float				SternThrusterRpm	= 0.0f;
+
 	// Autopilot
 	bool				bAutopilot			= false;
 	int					HDGInstruction		= 0;
@@ -186,20 +202,19 @@ public:
 	bool				bSmoke				= true;
 	bool				bSpray				= true;
 	bool				bRadar				= true;
-	bool				bWaves				= true;
+	bool				bFlag				= true;
+	bool				bKelvinWakes		= true;
 	bool				bWakeVao			= false;
 	bool				bContour			= false;
 
 	unique_ptr<BBox>	BBoxShape;
-
+	vector<sResultData>	vForcesData;
 
 private:
-	void	InitBoundingBox();
 	void	InitDimensions();
 	void	InitTriangles();
 	void	InitCentroid();
 	void	InitSurfaces();
-	void	InitVolume();
 	void	InitInertia();
 	void	InitWaterVertices();
 	void	InitVaoHull();
@@ -236,15 +251,20 @@ private:
 	// SYSTEM OF FORCES
 	void	ComputeArchimede();
 	void    ComputeGravity();
-	void	ComputeHeave(float dt);
-	void	ComputeThrust(float dt);
-	void	ComputeResistanceViscous(float dt);
-	void	ComputeResistanceWaves(float dt);
-	void	ComputeResistanceResidual(float dt);
+	void	ComputeHeave();
+	void	ComputeThrust1(float dt);
+	void	ComputeThrust2(float dt);
+	void	ComputePropellersDrag();
+	void	ComputePropellersTorque();
+	void	ComputeResistanceViscous();
+	void	ComputeResistanceWaves();
+	void	ComputeResistanceResidual();
 	void	ComputeBowThrust(float dt);
+	void	ComputeSternThrust(float dt);
 	void	ComputeRudder(float dt);
-	void	ComputeWind(float dt);
-	void	ComputeCentrifugal(float dt);
+	void	ComputeWind();
+	void	ComputeCentrifugal();
+	float	ComputePivotPosition();
 	void	ComputeForces(float dt);
 	void	UpdateAutopilot(float dt);
 	void	UpdateVaoPressureLines();
@@ -255,12 +275,15 @@ private:
 	void	UpdateWakeBuffer();
 	void	UpdateTextureWakeVao();
 
+	string	NMEA_RMC();
+
 	void	RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 color, bool bRenderOrigin);
 	void	RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 color, bool bRenderOrigin);
 	void	RenderNavLight(Camera& camera, int i, float distance);
 	void	RenderPropellers(Camera& camera, Sky* sky);
 	void	RenderRudders(Camera& camera, Sky* sky);
-	void	RenderRadars(Camera& camera, Sky* sky, bool bReflexion);
+	void	RenderRadars(Camera& camera, Sky* sky);
+	void	RenderFlag(Camera& camera, Sky* sky);
 
 	// Hull for physics
 	string				mPathnameHull;
@@ -288,26 +311,35 @@ private:
 	sForce				Archimede;
 	sForce				Gravity;
 	sForce				ResistanceHeave;
-	sForce				Thrust;
+	sForce				Thrust1;
+	sForce				Thrust2;
+	sForce				PropDrag1;
+	sForce				PropDrag2;
+	sForce				PropTorque1;
+	sForce				PropTorque2;
 	sForce				ResistanceViscous;
 	sForce				ResistanceWaves;
 	sForce				ResistanceResidual;
 	sForce				BowThrust;
+	sForce				SternThrust;
 	sForce				RudderLift;
 	sForce				RudderDrag;
 	sForce				WindRotation;
 	sForce				WindFront;
 	sForce				WindRear;
+	sForce				ResistanceAir;
 	sForce				Centrifugal;
 	sForce				COGSOG;
 
 	// Models
-	unique_ptr<Model>	mModelFull;
-	unique_ptr<Model>	mPropeller;
-	unique_ptr<Model>	mRudder;
-	unique_ptr<Sphere>	mLight;
-	unique_ptr<Model>	mRadar1;
-	unique_ptr<Model>	mRadar2;
+	unique_ptr<Model>	mModelFull	= 0;
+	unique_ptr<Model>	mPropeller1	= 0;	// Left propeller
+	unique_ptr<Model>	mPropeller2 = 0;	// Right propeller
+	unique_ptr<Model>	mRudder		= 0;
+	unique_ptr<Sphere>	mLight		= 0;
+	unique_ptr<Model>	mRadar1		= 0;
+	unique_ptr<Model>	mRadar2		= 0;
+	unique_ptr<Flag>	mFlag		= 0;
 
 	// Smoke
 	const int			mSmokeMaxParticles	= 5000;
@@ -321,11 +353,13 @@ private:
 	unique_ptr<Shader>	mShaderWireframe;
 	unique_ptr<Shader>	mShaderPressure;
 	unique_ptr<Shader>	mShaderCamera;
+	unique_ptr<Shader>	mShaderShipShadow;
 	unique_ptr<Shader>	mShaderShip;
 	unique_ptr<Shader>	mShaderUnicolor;
 	unique_ptr<Shader>	mShaderNavLight;
 	unique_ptr<Shader>	mShaderSmokeCompute;
 	unique_ptr<Shader>	mShaderSmokeRender;
+	unique_ptr<Shader>	mShaderShadow;
 
 	// Environment
 	unique_ptr<Texture>	mTexEnvironment;			// Environment texture (shaderSky)
@@ -347,6 +381,11 @@ private:
 	float				AreaWettedMax	= 0.0f;			// m2
 	float				AreaXZ			= 0.0f;			// m2
 	float				AreaXZ_RacCub	= 0.0f;
+	float				AreaFront		= 0.0f;
+	vec3				AreaFrontCenter = vec3(0.0f);
+	float				AreaLat			= 0.0f;
+	vec3				AreaLatCenter	= vec3(0.0f);
+
 	vec3				mCentroid		= vec3(0.0f);
 	float				Ixx				= 0.0f;
 	float				Iyy				= 0.0f;
@@ -364,9 +403,9 @@ private:
 	float               mDt				= 0.0f;			// Elapsed time since last frame
 
 	// Constants
-	const float			mGRAVITY				= 9.81f;
-	const float			mWATER_DENSITY			= 1027.f;	// SI = kg / m3
-	const double		mKINEMATIC_VISCOSITY	= 1.30e-6;	// Viscosité cinématique de l'eau de mer (m^2/s)
+	const float			mGRAVITY				= 9.80665f;	// m / s^2
+	const float			mWATER_DENSITY			= 1025.f;	// SI = kg / m3
+	const double		mKINEMATIC_VISCOSITY	= 1.19e-6;	// Viscosité cinématique de l'eau de mer (m^2/s)
 	const float			mAIR_DENSITY			= 1.225f;	// SI = kg / m3
 	const float			mPLATE_DRAG_COEFF		= 1.28f;
 
@@ -374,9 +413,12 @@ private:
 	unique_ptr<Sphere>	mForceApplication;
 	unique_ptr<Cube>	mAxis;
 
-	unique_ptr<Sound>	mSoundPower;
+	unique_ptr<Sound>	mSoundThrust1;
+	unique_ptr<Sound>	mSoundThrust2;
 	unique_ptr<Sound>	mSoundBowThruster;
+	unique_ptr<Sound>	mSoundSternThruster;
 	bool				mbSoundBowThrusterPlaying = false;
+	bool				mbSoundSternThrusterPlaying = false;
 
 	//= C O N T O U R =======================================
 
@@ -421,6 +463,11 @@ private:
 
 	unique_ptr<Shader>	mShaderWakeVaoToTex;
 
+	//= S H A D O W ================================
+
+	int					SHADOW_SIZE		= 8192;
+	GLuint				FBO_SHADOW		= 0;
+	
 	//= S P R A Y ==================================
 	
 	vector<sSprayPt>	mLeft;

@@ -50,6 +50,7 @@ struct Texture
 void SaveTexture2D(GLuint texture, int width, int height, int channels, int format, string name);
 void SaveDepthTexture2D(GLuint texture, int width, int height, std::string name);
 void SaveTexture3D(GLuint texture, string name);
+void SaveTexture2DArrayLayer(GLuint textureArray, int width, int height, int channels, GLenum format, int layer, const string& name);
 
 class Quad {
 private:
@@ -133,7 +134,7 @@ public:
 
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-		mShader = make_unique<Shader>("Resources/Shaders/quad_texture.vert", "Resources/Shaders/quad_texture.frag");
+		mShader = make_unique<Shader>("Resources/Misc/quad_texture.vert", "Resources/Misc/quad_texture.frag");
 	}
 	~QuadTexture()
 	{

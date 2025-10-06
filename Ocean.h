@@ -84,7 +84,7 @@ public:
 
 	float	  * GetPixelsDisplacement() { return mPixelsDisplacement.get(); };
 
-	void		Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bWaves, float LWL, float kelvinScale, float shipVelocity, float centerFore);
+	void		Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bKelvinWakes, float LWL, float kelvinScale, float shipVelocity, float centerFore, int baseFroude);
 
 	// Dimensions
 	const int			FFT_SIZE		= 512;				// Dimension of the FFT (1024 max)

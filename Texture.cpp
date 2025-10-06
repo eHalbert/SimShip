@@ -223,7 +223,7 @@ void Texture::BindImage(GLuint unit, GLenum access, GLenum format) const
     glBindImageTexture(unit, id, 0, GL_FALSE, 0, access, format);
 }
 
-void SaveTexture2D(GLuint texture, int width, int height, int channels, int format, std::string name)
+void SaveTexture2D(GLuint texture, int width, int height, int channels, int format, string name)
 {
     float* pixels = new float[width * height * channels];
 
@@ -245,7 +245,7 @@ void SaveTexture2D(GLuint texture, int width, int height, int channels, int form
     delete[] imageData;
     delete[] flippedData;
 }
-void SaveDepthTexture2D(GLuint texture, int width, int height, std::string name)
+void SaveDepthTexture2D(GLuint texture, int width, int height, string name)
 {
     float* pixels = new float[width * height];
 
@@ -298,4 +298,51 @@ void SaveTexture3D(GLuint texture, string name)
     }
     glBindTexture(GL_TEXTURE_3D, 0);
 
+}
+void SaveTexture2DArrayLayer(GLuint textureArray, int width, int height, int channels, GLenum format, int layer, const string& name)
+{
+    // Crée un framebuffer temporaire
+    GLuint fbo;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    // Attache la couche 'layer' de la texture 2D array comme profondeur du FBO
+    glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, textureArray, 0, layer);
+
+    // Vérifie la complétude du framebuffer
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "Framebuffer incomplete when trying to save layer " << layer << std::endl;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &fbo);
+        return;
+    }
+
+    // Alloue le buffer pixels float (1 channel si profondeur)
+    int pixelCount = width * height * channels;
+    float* pixels = new float[pixelCount];
+
+    // Lit les pixels depuis le framebuffer
+    glReadPixels(0, 0, width, height, format, GL_FLOAT, pixels);
+
+    // Convertit float -> unsigned char
+    unsigned char* imageData = new unsigned char[pixelCount];
+    for (int i = 0; i < pixelCount; ++i)
+        imageData[i] = static_cast<unsigned char>(std::min(std::max(pixels[i] * 255.0f, 0.0f), 255.0f));
+
+    // Flip vertical (utile pour que l’image soit orientée comme OpenGL)
+    int stride = width * channels;
+    unsigned char* flippedData = new unsigned char[pixelCount];
+    for (int y = 0; y < height; ++y)
+        memcpy(flippedData + y * stride, imageData + (height - 1 - y) * stride, stride);
+
+    // Sauvegarde au format PNG (avec stb_image_write par exemple)
+    stbi_write_png(name.c_str(), width, height, channels, flippedData, stride);
+
+    // Nettoyage
+    delete[] pixels;
+    delete[] imageData;
+    delete[] flippedData;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo);
 }
