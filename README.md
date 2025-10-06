@@ -8,7 +8,7 @@ Simulation of a ship moving on a cinematic-quality ocean.
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
 - Simulation written in C++ with OpenGL, GLFW, Glad, GLM, Open Asset Import Library (assimp), libigl, ImGui, OpenAL, NanoVG, stb, Eigen, FFTW3, Pugixml, libnova, Clipper2.
-- Real time simulation with high rate of frames per second (target of 150 fps in fullscreen 2560 x 1440).
+- Real time simulation with high rate of frames per second (target of 120 fps in fullscreen 2560 x 1440).
 - The rendering of the 3D scene is optimized to ensure consistency of visual quality between all elements: ocean, ship, sky, clouds, terrain, mist or fog effects.
 
 
@@ -35,11 +35,12 @@ Simulation of a ship moving on a cinematic-quality ocean.
 **SHIP**
 
 - Full motion over 6 degrees of freedom (surge, sway, heave, yaw, pitch, roll).
-- Ship motion forces (archimede, gravity, viscous resistance, wave resistance, residual resistance, wind drift, wind rotation, thuster, bow thruster, rudder).
+- Ship motion forces (archimede, gravity, viscous resistance, wave resistance, residual resistance, wind drift, wind rotation, thuster, bow thruster, stern thruster, propellers, rudder).
 - Propellers and radars animated.
 - Reflection of the ship on the water.
 - Wake simulation (Kelvin waves, foam and bubbles).
 - Smoke simulated with particles.
+- Flag animated. 
 - Navigation lights.
 - Autopilot with Proportional-Integral-Derivative controller.
 
@@ -47,8 +48,8 @@ Simulation of a ship moving on a cinematic-quality ocean.
 
 - Camera full smooth motion (orbital around the ship, fps, fixed views and free views on board the ship, binoculars).
 - 3D sounds (engines, seagulls, horn).
-- Terrain (island).
-- Markup (buoys).
+- Terrain (islands).
+- Markup (buoys with lights).
 
 # Compilation
 
