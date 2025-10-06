@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<Positions>
+  <indexPosition>9</indexPosition>
+  <Position name="Treac'h er Goured" lon="-2.94097114" lat="47.3816223" heading="215" />
+  <Position name="Port de Houat" lon="-2.95672011" lat="47.3929329" heading="119" />
+  <Position name="Nord du port de Houat" lon="-2.95201015" lat="47.3979797" heading="191" />
+  <Position name="Sud Béniguet" lon="-3.01105905" lat="47.3947716" heading="34" />
+  <Position name="Tréach er Salus" lon="-2.96275711" lat="47.3803291" heading="288" />
+  <Position name="La Teignouse" lon="-3.03526974" lat="47.4573555" heading="150" />
+  <Position name="Grand port" lon="-2.98214221" lat="47.3789139" heading="355" />
+  <Position name="Amarrage 1 au Grand port" lon="-2.98321009" lat="47.3917007" heading="217" />
+  <Position name="Amarrage 2 au Grand port" lon="-2.98929095" lat="47.3930664" heading="124" />
+  <Position name="Sud-Est de Houat" lon="-2.95533204" lat="47.3732452" heading="270" />
+  <Position name="Est de Belle-Ile" lon="-3.04943943" lat="47.30228424" heading="31" />
+</Positions>
