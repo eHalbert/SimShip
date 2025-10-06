@@ -17,7 +17,7 @@
 // Rain sounds:
 // https://soundcloud.com/elirtmusic/sleeping-sound-rain-and-thunder-1-hours
 
-#version 450
+#version 430
 
 in vec2 TexCoord;
 
@@ -285,7 +285,7 @@ void main()
         color.rgb += fRain * rainCol * maskTrail * 1.5;
     }
 
-    //Droplets + Drips
+    // Droplets + Drips
     if (bRainBlurDrips)
     {
         float zoom = 4.0;   // Bigger is the zoom, smaller are the drops
@@ -305,7 +305,7 @@ void main()
    	    float cy = Rain(uv + e.yx, t).x;
    	    vec2 n = vec2(cx - c.x, cy - c.x);  // normals
     
-        // BLUR derived from existical https://www.shadertoy.com/view/Xltfzj
+        // BLUR derived from https://www.shadertoy.com/view/Xltfzj
         float Pi = 6.28318530718;           // Pi*2
     
         // GAUSSIAN BLUR SETTINGS

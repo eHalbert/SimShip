@@ -372,7 +372,8 @@ vec3 skyRadiance(vec3 camera, vec3 viewdir, vec3 sundir, out vec3 extinction)
 // point=point on the ground
 // sundir=unit vector towards the sun
 // return scattered light and extinction coefficient
-vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) {
+vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) 
+{
     vec3 result;
     vec3 viewdir = point - camera;
     float d = length(viewdir);
@@ -385,7 +386,8 @@ vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) {
 
     float deltaSq = sqrt(rMu * rMu - r * r + Rt*Rt);
     float din = max(-rMu - deltaSq, 0.0);
-    if (din > 0.0) {
+    if (din > 0.0) 
+    {
         camera += din * viewdir;
         rMu += din;
         mu = rMu / Rt;
@@ -393,13 +395,15 @@ vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) {
         d -= din;
     }
 
-    if (r <= Rt) {
+    if (r <= Rt) 
+    {
         float nu = dot(viewdir, sundir);
         float muS = dot(camera, sundir) / r;
 
         vec4 inScatter;
 
-        if (r < Rg + 600.0) {
+        if (r < Rg + 600.0) 
+        {
             // avoids imprecision problems in aerial perspective near ground
             float f = (Rg + 600.0) / r;
             r = r * f;
@@ -412,11 +416,10 @@ vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) {
         float mu1 = rMu1 / r1;
         float muS1 = dot(point, sundir) / r1;
 
-        if (mu > 0.0) {
+        if (mu > 0.0) 
             extinction = min(transmittance(r, mu) / transmittance(r1, mu1), 1.0);
-        } else {
+        else 
             extinction = min(transmittance(r1, -mu1) / transmittance(r, -mu), 1.0);
-        }
 
         vec4 inScatter0 = texture4D(inscatterSampler, r, mu, muS, nu);
         vec4 inScatter1 = texture4D(inscatterSampler, r1, mu1, muS1, nu);
@@ -429,7 +432,9 @@ vec3 inScattering(vec3 camera, vec3 point, vec3 sundir, out vec3 extinction) {
         float phase = phaseFunctionR(nu);
         float phaseM = phaseFunctionM(nu);
         result = inScatter.rgb * phase + inScatterM * phaseM;
-    } else {
+    } 
+    else 
+    {
         result = vec3(0.0);
         extinction = vec3(1.0);
     }
@@ -451,12 +456,14 @@ void sunRadianceAndSkyIrradiance(vec3 worldP, vec3 worldS, out vec3 sunL, out ve
 // ----------------------------------------------------------------------------
 
 
-vec4 skyRadiance(vec2 u) {
+vec4 skyRadiance(vec2 u) 
+{
     return textureLod(skySampler, (u * (0.5 / 1.1) + 0.5), 0.0);
 }
 
 const float hdrExposure = 1.0;
-vec3 hdr(vec3 L) {
+vec3 hdr(vec3 L) 
+{
     L = L * hdrExposure;
     L.r = L.r < 1.413 ? pow(L.r * 0.38317, 1.0 / 2.2) : 1.0 - exp(-L.r);
     L.g = L.g < 1.413 ? pow(L.g * 0.38317, 1.0 / 2.2) : 1.0 - exp(-L.g);
@@ -478,7 +485,8 @@ uniform float clamp2;
 
 uniform vec4 cloudsColor;
 
-vec4 cloudColor(vec3 worldP, vec3 worldCamera, vec3 worldSunDir) {
+vec4 cloudColor(vec3 worldP, vec3 worldCamera, vec3 worldSunDir) 
+{
     const float a = 23.0 / 180.0 * M_PI;
     mat2 m = mat2(cos(a), sin(a), -sin(a), cos(a));
 
@@ -509,7 +517,8 @@ vec4 cloudColor(vec3 worldP, vec3 worldCamera, vec3 worldSunDir) {
     return vec4(cloudL, t) * cloudsColor;
 }
 
-vec4 cloudColorV(vec3 worldCamera, vec3 V, vec3 worldSunDir) {
+vec4 cloudColorV(vec3 worldCamera, vec3 V, vec3 worldSunDir) 
+{
     vec3 P = worldCamera + V * (3000.0 - worldCamera.z) / V.z;
     return cloudColor(P, worldCamera, worldSunDir);
 }
@@ -523,7 +532,8 @@ in vec3 ViewDir;
 out vec4 FragColor;
 
 // Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
-vec3 aces(vec3 x) {
+vec3 aces(vec3 x) 
+{
     const float a = 2.51;
     const float b = 0.03;
     const float c = 2.43;
@@ -533,13 +543,14 @@ vec3 aces(vec3 x) {
 }
 
 // Simple contrast, center = 0.5
-vec3 BoostContrast(vec3 color, float contrast) {
+vec3 BoostContrast(vec3 color, float contrast) 
+{
     return (color - 0.5) * contrast + 0.5;
 }
 
 void main() {
     vec3 v = normalize(ViewDir);
-    vec3 sunColor = vec3(step(cos(3.1415926 / 180.0), dot(v, worldSunDir))) * SUN_INTENSITY;
+    vec3 sunColor = vec3(step(0.99986967678, dot(v, worldSunDir))) * SUN_INTENSITY; // cos(0.53°) = 0,99986967678
     vec3 extinction;
     vec3 inscatter = skyRadiance(worldCamera + earthPos, v, worldSunDir, extinction);
     vec3 finalColor = sunColor * extinction + inscatter;
