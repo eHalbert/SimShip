@@ -1,4 +1,4 @@
-#version 330 core
+#version 430
 
 layout (location = 0) in vec2 aPos;          // Position (x, y) du sommet du quad
 layout (location = 1) in vec2 aTexCoord;     // Coordonnée UV associée

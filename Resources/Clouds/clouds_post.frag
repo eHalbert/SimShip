@@ -1,24 +1,23 @@
-#version 330 core
+#version 430
 
 layout (location = 0) out vec4 FragColor;
   
 in vec2 TexCoords;
 
-uniform sampler2D   clouds;
-uniform sampler2D   emissions;
+uniform sampler2D   clouds;     // Color
+uniform sampler2D   emissions;  // Bloom
 
-uniform float       time;
-uniform vec4        lightPos;
-uniform vec2        resolution;
 uniform vec2        cloudRenderResolution;
+uniform vec2        resolution;
+uniform vec4        lightPos;
 
 uniform bool        isLightInFront = true;
 uniform bool        enableGodRays;
 uniform float       lightDotCameraFront;
-
+uniform float       time;
 uniform float	    exposure;
 
-#define  offset_x  1. / cloudRenderResolution.x  
+#define  offset_x  1. / cloudRenderResolution.x
 #define  offset_y  1. / cloudRenderResolution.y
 
 vec4 gaussianBlur(sampler2D tex, vec2 uv)
