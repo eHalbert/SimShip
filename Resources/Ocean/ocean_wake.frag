@@ -2,21 +2,23 @@
 
 #define ONE_OVER_4PI	0.0795774715459476
 
-layout(binding = 1) uniform samplerCube	envmap;
-layout(binding = 2) uniform sampler2D	gradients;
-layout(binding = 3) uniform sampler2D	foamBuffer;
-layout(binding = 4) uniform sampler2D	foamDesign;
-layout(binding = 5) uniform sampler2D	foamBubbles;
-layout(binding = 6) uniform sampler2D	foamTexture;
-layout(binding = 7) uniform sampler2D	contourShip;
-layout(binding = 8) uniform sampler2D	reflectionTexture;
-layout(binding = 9) uniform sampler2D	waterDUDV;
-layout(binding = 10) uniform sampler2D	wakeBuffer;
+layout(binding = 2) uniform samplerCube	envmap;
+layout(binding = 3) uniform sampler2D	gradients;
+layout(binding = 4) uniform sampler2D	foamBuffer;
+layout(binding = 5) uniform sampler2D	foamDesign;
+layout(binding = 6) uniform sampler2D	foamBubbles;
+layout(binding = 7) uniform sampler2D	foamTexture;
+layout(binding = 8) uniform sampler2D	contourShip;
+layout(binding = 9) uniform sampler2D	reflectionTexture;
+layout(binding = 10) uniform sampler2D	waterDUDV;
+layout(binding = 11) uniform sampler2D	wakeBuffer;
+layout(binding = 12) uniform sampler2D  shadowMap;
 
 in vec3		vdir;
 in vec2		tex;
 in vec3		vertex;
 in float	vFoamIntensity;
+in vec4		FragPosLightSpace;
 
 uniform vec3	oceanColor;
 uniform float	transparency;
@@ -33,6 +35,7 @@ uniform float	shipRotation;
 uniform vec2	shipSize;
 uniform vec2	wakeSize;
 uniform bool	bShowPatch;
+uniform bool	bShipShadow;
 
 uniform float	time;
 uniform bool	bWake;
@@ -78,6 +81,20 @@ vec4 AddFoam(vec2 uv, float factor)
 			
 	// Mix the original color with the white foam
 	return mix(FragColor, foamColor, foamWhiteness * factor);
+}
+float ShadowCalculation(vec4 fragPosLightSpace)
+{
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if(projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
+        return 0.0;
+
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
+    float currentDepth = projCoords.z;
+    float bias = 0.005;
+    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    return shadow;
 }
 
 void main()
@@ -207,6 +224,13 @@ void main()
 		absorbanceFactor = clamp(absorbanceFactor, 0.0, 1.0);
 		vec3 finalColor = mix(absorbanceColor * exposure, FragColor.rgb, absorbanceFactor);
 		FragColor = vec4(finalColor, FragColor.a);
+	}
+
+	// Shadow
+	if (bShipShadow)
+	{
+		float shadow = ShadowCalculation(FragPosLightSpace);                      
+		FragColor.rgb = (1.0 - shadow * 0.2) * FragColor.rgb;
 	}
 
 	if (bShowPatch)

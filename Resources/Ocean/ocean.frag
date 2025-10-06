@@ -107,7 +107,7 @@ void main()
 	FragColor.a = 1.0 - abs(dot(N, R)) * transparency;
 
 	// The highest waves are greener and more transparent
-	if (iFoam == 1 && lod < 3.0)
+	if (iFoam == 1)
 	{
 		vec3 greenHighlight = vec3(0.0, 0.6, 0.4);	// Green
 		const float sprayThresholdLower = 0.0;
@@ -119,7 +119,7 @@ void main()
 
 	// Foam
 	float foamFactor = texture(foamBuffer, tex).r;
-	if (iFoam == 1 && foamFactor > 0.0 && lod < 3.0)
+	if (iFoam == 1 && foamFactor > 0.0)
 		FragColor = AddFoamWithBubbles(tex, foamFactor);
 
 	if (bAbsorbance)

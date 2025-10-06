@@ -1,4 +1,4 @@
-﻿#version 430
+#version 430
 
 layout (location = 0) in vec3 aPosition;
 layout (location = 1) in vec2 aTexCoords;
@@ -13,15 +13,17 @@ uniform vec3    eyePos;
 
 uniform vec3    shipPosition;   // Ship position (world)
 uniform float   shipRotation;   // Ship heading (radians, 0 = X)
-uniform bool    bWaves;
+uniform bool    bKelvinWakes;
 uniform float   amplitude;      // Height of the waves
 uniform float   kelvinScale;
 uniform float   centerFore;
+uniform mat4    matLightViewProj;  // Matrice view-projection de la lumière
 
 out vec3        vdir;
 out vec2        tex;
 out vec3        vertex;
 out float       vFoamIntensity;
+out vec4        FragPosLightSpace;
 
 const float PI_2 = 1.57079632;
 const int kelvin_width_2 = 512;
@@ -35,7 +37,7 @@ void main()
     vec3 posWorld = posLocal.xyz + disp;
     vFoamIntensity = 0.0;   // Out for the fragment sshader
 
-    if (bWaves)
+    if (bKelvinWakes)
     {
         // Relative position of the vertex to the position of the ship (in world space)
         vec2 relativePos = posWorld.xz - shipPosition.xz;
@@ -77,5 +79,7 @@ void main()
     vertex = posWorld;
     vdir = eyePos - vertex;
     tex = aTexCoords;
+    FragPosLightSpace = matLightViewProj * vec4(vertex, 1.0);
+
     gl_Position = matViewProj * vec4(vertex, 1.0);
 }
