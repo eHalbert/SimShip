@@ -17,7 +17,7 @@ out vec4 ParticleColor;
 void main() 
 {
     gl_Position = projection * view * vec4(aPos, 1.0);
-    gl_PointSize = 600.0 / gl_Position.w;
+    gl_PointSize = 1000.0 / gl_Position.w;
 
     float alpha = 2.0 * density * aLife / lifeSpan;
     ParticleColor = vec4(aColor.rgb * exposure, alpha);

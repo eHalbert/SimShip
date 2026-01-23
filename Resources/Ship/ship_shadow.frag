@@ -1,4 +1,5 @@
 #version 430
+precision highp float;
 
 struct Material 
 {

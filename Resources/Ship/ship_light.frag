@@ -7,9 +7,9 @@ uniform vec3 viewPos;
 
 out vec4 FragColor;
 
-const float maxDistance = 10000.0;  // maximum range in meters
-const float minI = 1.0;             // minimum intensity at maximum range
-const float maxI = 100.0;           // maximum intensity
+const float maxDistance = 15000.0;  // maximum range in meters
+const float minI = 300.0;           // minimum intensity at maximum range
+const float maxI = 1000.0;          // maximum intensity
 
 void main()
 {
