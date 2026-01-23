@@ -359,6 +359,14 @@ sHM Sky::GetTime()
     std::tm tm_utc;
     gmtime_s(&tm_utc, &now_c);
 
+    // Récupération décalage fuseau horaire en secondes
+    long timezone_seconds = 0;
+    _tzset(); // initialise la variable interne du fuseau
+    _get_timezone(&timezone_seconds); // récupère décalage en secondes
+
+    // Conversion en heures arrondies
+    int timezone_hours = static_cast<int>(-timezone_seconds / 3600);
+
     int hour = tm_utc.tm_hour - tmTimeStored.tm_hour;
     int minute = tm_utc.tm_min - tmTimeStored.tm_min;
     if (SunHour + hour > 23)
@@ -379,6 +387,7 @@ sHM Sky::GetTime()
     sHM hm{};
     hm.hour = glm::clamp(SunHour + hour, 0, 23);
     hm.minute = glm::clamp(SunMinute + minute, 0, 59);
+    hm.timezoneOffsetHours = timezone_hours;
 
     return hm;
 }

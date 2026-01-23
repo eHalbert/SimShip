@@ -18,11 +18,11 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 using namespace std;
 using namespace glm;
 
-class VolumetricClouds
+class Clouds
 {
 public:
-	VolumetricClouds(int width, int height, float windSpeedKN);
-	~VolumetricClouds();
+	Clouds(int width, int height, float windSpeedKN);
+	~Clouds();
 	
 	void InitVariables();
 	void SetCloudSpeed(float windSpeedKN);

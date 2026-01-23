@@ -331,6 +331,7 @@ bool Camera::IsInViewFrustum(const vec3& position)
     vec4 clipSpace = mMatViewProjection * vec4(position, 1.0f);
     return std::abs(clipSpace.x) <= clipSpace.w && std::abs(clipSpace.y) <= clipSpace.w && clipSpace.z >= -clipSpace.w && clipSpace.z <= clipSpace.w;
 }
+
 float Camera::GetHorizonViewportY() const
 {
     // Position far away on the line of sight

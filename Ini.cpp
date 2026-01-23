@@ -121,6 +121,26 @@ vec3 Ini::GetVec3(const wchar_t* section, const wchar_t* key, const vec3& defaul
 	}
 	return defaultValue;
 }
+dvec3 Ini::GetdVec3(const wchar_t* section, const wchar_t* key, const dvec3& defaultValue)
+{
+	wchar_t value[256];
+	if (GetPrivateProfileString(section, key, L"", value, sizeof value / sizeof(wchar_t), m_Pathname) != 0)
+	{
+		wchar_t* pch;
+		wchar_t* context = nullptr;
+		pch = wcstok(value, L" ", &context);
+		double val[3] = { defaultValue.x, defaultValue.y, defaultValue.z }; // Valeur par défaut
+		int i = 0;
+		while (pch != nullptr && i < 3)
+		{
+			val[i] = static_cast<double>(wcstod(pch, nullptr));
+			pch = wcstok(nullptr, L" ", &context);
+			++i;
+		}
+		return glm::dvec3(val[0], val[1], val[2]);
+	}
+	return defaultValue;
+}
 vector<vec3> Ini::GetVec3Array(const wchar_t* section, const wchar_t* key, const vector<vec3>& defaultValue)
 {
 	wchar_t value[2048];
@@ -134,6 +154,27 @@ vector<vec3> Ini::GetVec3Array(const wchar_t* section, const wchar_t* key, const
 		{
 			std::wistringstream tr(triplet);
 			float x, y, z;
+			tr >> x >> y >> z;
+			if (tr) // vérifie si parsing ok
+				vecs.emplace_back(x, y, z);
+		}
+		return vecs;
+	}
+	return defaultValue;
+}
+vector<dvec3> Ini::GetdVec3Array(const wchar_t* section, const wchar_t* key, const vector<dvec3>& defaultValue)
+{
+	wchar_t value[2048];
+	if (GetPrivateProfileString(section, key, L"", value, sizeof value / sizeof(wchar_t), m_Pathname) != 0)
+	{
+		vector<dvec3> vecs;
+		std::wstring s(value);
+		std::wistringstream ss(s);
+		std::wstring triplet;
+		while (std::getline(ss, triplet, L',')) // Séparation chaque vec3
+		{
+			std::wistringstream tr(triplet);
+			double x, y, z;
 			tr >> x >> y >> z;
 			if (tr) // vérifie si parsing ok
 				vecs.emplace_back(x, y, z);
@@ -225,7 +266,28 @@ bool Ini::SetVec3(const wchar_t* section, const wchar_t* key, const vec3& value)
 	
 	return false;
 }
+bool Ini::SetdVec3(const wchar_t* section, const wchar_t* key, const dvec3& value)
+{
+	wostringstream S_Stream;
+	S_Stream << value.x << L" " << value.y << L" " << value.z;
+	wstring valueAsString = S_Stream.str();
+	if (WritePrivateProfileString(section, key, valueAsString.c_str(), m_Pathname))
+		return true;
+
+	return false;
+}
 bool Ini::SetVec3Array(const wchar_t* section, const wchar_t* key, const vector<vec3>& vecArray)
+{
+	if (vecArray.empty()) return false;
+	wostringstream ss;
+	for (const auto& v : vecArray) {
+		ss << v.x << L" " << v.y << L" " << v.z << L",";
+	}
+	wstring valueStr = ss.str();
+	valueStr.pop_back();
+	return WritePrivateProfileString(section, key, valueStr.c_str(), m_Pathname) ? true : false;
+}
+bool Ini::SetdVec3Array(const wchar_t* section, const wchar_t* key, const vector<dvec3>& vecArray)
 {
 	if (vecArray.empty()) return false;
 	wostringstream ss;

@@ -73,8 +73,8 @@ Ocean::~Ocean()
 {
     if (mTexInitialSpectrum)
         glDeleteTextures(1, &mTexInitialSpectrum);
-    if (mTextFrequencies)
-        glDeleteTextures(1, &mTextFrequencies);
+    if (mTexFrequencies)
+        glDeleteTextures(1, &mTexFrequencies);
     if (mTexUpdatedSpectra[0] && mTexUpdatedSpectra[1])
         glDeleteTextures(2, &mTexUpdatedSpectra[0]);
     if (mTexTempData)
@@ -125,12 +125,12 @@ void Ocean::Init()
 
     // Generate initial spectrum and frequencies
     glGenTextures(1, &mTexInitialSpectrum);
-    glGenTextures(1, &mTextFrequencies);
+    glGenTextures(1, &mTexFrequencies);
 
     glBindTexture(GL_TEXTURE_2D, mTexInitialSpectrum);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RG32F, FFT_SIZE_1, FFT_SIZE_1);
 
-    glBindTexture(GL_TEXTURE_2D, mTextFrequencies);
+    glBindTexture(GL_TEXTURE_2D, mTexFrequencies);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_R32F, FFT_SIZE_1, FFT_SIZE_1);
 
     // Fill in the 2 textures with data
@@ -215,11 +215,19 @@ void Ocean::Init()
     GetPatchVertices();
 
     // Load shaders
+    auto highestSetBit = [](uint32_t x) -> uint32_t {
+        uint32_t ret = 0;
+        while (x >>= 1)
+            ++ret;
+        return ret;
+        };
+
     char defines[256];
+    uint32_t log2OfPow2 = highestSetBit(FFT_SIZE);
     sprintf_s(defines, "#define FFT_SIZE %d\n#define GRID_SIZE %d\n#define LOG2_N_SIZE %d\n#define PATCH_SIZE_X2_N %.4f\n",
         FFT_SIZE,
         MESH_SIZE,
-        Log2OfPow2(FFT_SIZE),
+        log2OfPow2,
         (float)PATCH_SIZE * 2.0f / (float)FFT_SIZE);
 
     mShaderSpectrum = make_unique<Shader>();
@@ -287,7 +295,7 @@ void Ocean::Init()
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxanisotropy / 2);
 
-    OceanColor = ConvertToFloat(vOceanColors[iOceanColor]);
+    OceanColor = color_255_to_1(vOceanColors[iOceanColor]);
 }
 void Ocean::InitFrequencies()
 {
@@ -337,7 +345,7 @@ void Ocean::InitFrequencies()
     //getKMinMax();
     //GetSpectrumStats(vS);
 
-    glBindTexture(GL_TEXTURE_2D, mTextFrequencies);
+    glBindTexture(GL_TEXTURE_2D, mTexFrequencies);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, FFT_SIZE_1, FFT_SIZE_1, GL_RED, GL_FLOAT, wdata);
 
     glBindTexture(GL_TEXTURE_2D, mTexInitialSpectrum);
@@ -402,7 +410,7 @@ GLuint Ocean::InitTexture2DArray()
 
     return textureID;
 }
-void Ocean::GetWind(vec2 wind) 
+void Ocean::GetWind(vec2 wind)
 { 
     Wind = wind; 
     Lambda = EvaluateLambda(Wind); 
@@ -871,7 +879,7 @@ void Ocean::Update(float t)
     mShaderSpectrum->use();     // Ocean/updatespectrum.comp
     mShaderSpectrum->setFloat("time", t);                                                   // t * 0.6 might be a adhoc parameter to slow down the speed of the waves
     glBindImageTexture(0, mTexInitialSpectrum, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RG32F);      // tilde_h0
-    glBindImageTexture(1, mTextFrequencies, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R32F);          // frequencies
+    glBindImageTexture(1, mTexFrequencies, 0, GL_TRUE, 0, GL_READ_ONLY, GL_R32F);          // frequencies
     glBindImageTexture(2, mTexUpdatedSpectra[0], 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RG32F);   // tilde_h
     glBindImageTexture(3, mTexUpdatedSpectra[1], 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RG32F);   // tilde_D
     glDispatchCompute(FFT_SIZE / 16, FFT_SIZE / 16, 1);
@@ -935,19 +943,42 @@ void Ocean::FourierTransform(GLuint spectrum)
     mShaderFft->use();
     glDispatchCompute(FFT_SIZE, 1, 1);
 }
-bool Ocean::GetVertice(vec2 pos, vec3& output)
+bool Ocean::GetVerticeXZ(vec2 pos, vec3& output)
 {
-    // Return a valid vertice
-    int x = pos.x * FFT_SIZE / PATCH_SIZE + FFT_SIZE / 2;
-    int z = pos.y * FFT_SIZE / PATCH_SIZE + FFT_SIZE / 2;
+    int x = (static_cast<int>(pos.x * MESH_SIZE / PATCH_SIZE) + MESH_SIZE / 2) % MESH_SIZE;
+    if (x < 0) x += MESH_SIZE;
 
-    int index = 4 * (z * FFT_SIZE + x);
-    
+    int z = (static_cast<int>(pos.y * MESH_SIZE / PATCH_SIZE) + MESH_SIZE / 2) % MESH_SIZE;
+    if (z < 0) z += MESH_SIZE;
+
+    int xFft = (x - MESH_SIZE / 2) * FFT_SIZE / MESH_SIZE + FFT_SIZE / 2;
+    int yFft = (z - MESH_SIZE / 2) * FFT_SIZE / MESH_SIZE + FFT_SIZE / 2;
+    int index = 4 * (yFft * FFT_SIZE + xFft);
+
     // Outside the map
     if (index < 0 || index >= FFT_SIZE * FFT_SIZE * 4)
         return false;
 
     output = { pos.x + mPixelsDisplacement[index + 0], mPixelsDisplacement[index + 1] , pos.y + mPixelsDisplacement[index + 2] };
+    return true;
+}
+bool Ocean::GetVerticeXYZ(vec3 pos, vec3& output)
+{
+    int x = (static_cast<int>(pos.x * MESH_SIZE / PATCH_SIZE) + MESH_SIZE / 2) % MESH_SIZE;
+    if (x < 0) x += MESH_SIZE;
+
+    int z = (static_cast<int>(pos.z * MESH_SIZE / PATCH_SIZE) + MESH_SIZE / 2) % MESH_SIZE;
+    if (z < 0) z += MESH_SIZE;
+
+    int xFft = (x - MESH_SIZE / 2) * FFT_SIZE / MESH_SIZE + FFT_SIZE / 2;
+    int yFft = (z - MESH_SIZE / 2) * FFT_SIZE / MESH_SIZE + FFT_SIZE / 2;
+    int index = 4 * (yFft * FFT_SIZE + xFft);
+
+    // Outside the map
+    if (index < 0 || index >= FFT_SIZE * FFT_SIZE * 4)
+        return false;
+
+    output = { pos.x + mPixelsDisplacement[index + 0], mPixelsDisplacement[index + 1] , pos.z + mPixelsDisplacement[index + 2] };
     return true;
 }
 
@@ -1452,7 +1483,7 @@ vector<sResultData> Ocean::DirectionalAnalysis()
 }
 
 // Render
-void Ocean::GetPatchesDecal(vec2 Position, float w, float h, float Yaw, vector<pair<int, int>>& vPatches)
+void Ocean::GetPatchesDecal(vec2 Position, float w, float h, float Yaw)
 {
     // Get the corners of the decal
     float cosYaw = cos(Yaw);
@@ -1478,15 +1509,10 @@ void Ocean::GetPatchesDecal(vec2 Position, float w, float h, float Yaw, vector<p
     }
 
     // Convert limits to mvIndices of patches
-    int iMin = floor((xMin + PATCH_SIZE / 2) / PATCH_SIZE);
-    int iMax = ceil((xMax + PATCH_SIZE / 2) / PATCH_SIZE) - 1;
-    int jMin = floor((zMin + PATCH_SIZE / 2) / PATCH_SIZE);
-    int jMax = ceil((zMax + PATCH_SIZE / 2) / PATCH_SIZE) - 1;
-
-	vPatches.clear();
-    for (int i = iMin; i <= iMax; i++)
-		for (int j = jMin; j <= jMax; j++)
-            vPatches.push_back(std::make_pair(i, j));
+    iMinPatchDecal = floor((xMin + PATCH_SIZE / 2) / PATCH_SIZE);
+    iMaxPatchDecal = ceil((xMax + PATCH_SIZE / 2) / PATCH_SIZE) - 1;
+    jMinPatchDecal = floor((zMin + PATCH_SIZE / 2) / PATCH_SIZE);
+    jMaxPatchDecal = ceil((zMax + PATCH_SIZE / 2) / PATCH_SIZE) - 1;
 }
 void Ocean::WorldToPatch(float x, float z, float& xLocal, float& zLocal, int& i, int& j)
 {
@@ -1506,7 +1532,7 @@ bool IsPatchInFrustum(const mat4& viewProjMatrix, const vec3& center, float radi
     // A margin (e.g. 1.1 * radius) can be added to avoid popping at the edges
     float margin = 1.1f * radius;
 
-    vec3 absClipPos = glm::abs(glm::vec3(clipSpacePos));
+    vec3 absClipPos = glm::abs(vec3(clipSpacePos));
     return (absClipPos.x <= w + margin) && (absClipPos.y <= w + margin) && (absClipPos.z <= w + margin);
 }
 void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float ShipRotation, bool bKelvinWakes, float LWL, float kelvinScale, float shipVelocity, float centerFore, int baseFroude)
@@ -1558,11 +1584,10 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     glBindTexture(GL_TEXTURE_2D, mTexFoam->id);
 
     // Search for patches with wake (excluding instancing)
-    vector<pair<int, int>> vPatches;
     if (bTexWakeByVAO)
-        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeVaoSize, TexWakeVaoSize, ShipRotation, vPatches);
+        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeVaoSize, TexWakeVaoSize, ShipRotation);
     else
-        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeBufferSize, TexWakeBufferSize, ShipRotation, vPatches);
+        GetPatchesDecal(vec2(ShipPosition.x, ShipPosition.z), TexWakeBufferSize, TexWakeBufferSize, ShipRotation);
 
     // Definition of the InstanceData structure
     struct InstanceData {
@@ -1585,6 +1610,7 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
 #endif
 
     const float sphereRadius = PATCH_SIZE * 1.414f;
+    float margin = 1.1f * sphereRadius;
     const mat4 viewProj = camera.GetViewProjection();
 
     for (int j = -nGrids / 2; j <= nGrids / 2; j++)
@@ -1594,30 +1620,39 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
             vec3 center = vec3(PATCH_SIZE * (i + cameraPatchX), 0.f, PATCH_SIZE * (j + cameraPatchZ));
 
             // FRUSTUM CULLING test
-            if (!IsPatchInFrustum(viewProj, center, sphereRadius))
-                continue;  // Out of the frustum, we skip
+            //if (!IsPatchInFrustum(viewProj, center, sphereRadius))
+            //    continue;  // Out of the frustum, we skip
+            vec4 clipSpacePos = viewProj * vec4(center, 1.0f);
+            float w = clipSpacePos.w;
 
-            // Calculate distance to camera center (for LOD only)
-            float distanceToCamera = glm::distance(center, camera.GetPosition());
+            // Clip coordinates in [-w, w] positive for visible (with margin for radius)
+            // A margin (e.g. 1.1 * radius) can be added to avoid popping at the edges
 
-            int lodLevel = 0;
-            if (distanceToCamera < 600.f)       { lodLevel = 0; }
-            else if (distanceToCamera < 1000.f) { lodLevel = 1; }
-            else if (distanceToCamera < 1500.f) { lodLevel = 2; }
-            else if (distanceToCamera < 2000.f) { lodLevel = 3; }
-            else                                { lodLevel = 4; }
+            vec3 absClipPos = glm::abs(vec3(clipSpacePos));
+            if ((absClipPos.x <= w + margin) && (absClipPos.y <= w + margin))
+            {
+                // Calculate distance to camera center (for LOD only)
+                float distanceToCamera = glm::distance(center, camera.GetPosition());
 
-            // Checks if patch wake is absent (not instantiated)
-            pair<int, int> recherche(i + cameraPatchX, j + cameraPatchZ);
-            if (std::find(vPatches.begin(), vPatches.end(), recherche) != vPatches.end())
-                continue;  // Patch wake present, skip
+                int lodLevel = 4;
+                if (distanceToCamera < 600.f) { lodLevel = 0; }
+                else if (distanceToCamera < 1200.f) { lodLevel = 1; }
+                else if (distanceToCamera < 2400.f) { lodLevel = 2; }
+                else if (distanceToCamera < 4800.f) { lodLevel = 3; }
 
-            // Fills in the instance data
-            InstanceData data;
-            data.modelMatrix = glm::translate(mat4(1.0f), center);
-            data.lod = lodLevel;
-            data.foamSwitch = 1;// dist(gen);    // 0 or 1
-            instanceData[lodLevel].push_back(data);
+                // Checks if patch wake is absent (not instantiated)
+                int ii = i + cameraPatchX;
+                int jj = j + cameraPatchZ;
+                if (ii >= iMinPatchDecal && ii <= iMaxPatchDecal && jj >= jMinPatchDecal && jj <= jMaxPatchDecal)
+                    continue;  // Patch wake present, skip
+
+                // Fills in the instance data
+                InstanceData data;
+                data.modelMatrix = glm::translate(mat4(1.0f), center);
+                data.lod = lodLevel;
+                data.foamSwitch = 1;// dist(gen);    // 0 or 1
+                instanceData[lodLevel].push_back(data);
+            }
         }
     }
 
@@ -1665,17 +1700,17 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOceanWake->use();
     mShaderOceanWake->setMat4("matViewProj", camera.GetProjection()* camera.GetView());
     mShaderOceanWake->setVec3("eyePos", camera.GetPosition());
-    mShaderOceanWake->setVec3("oceanColor", OceanColor);
-    
     mShaderOceanWake->setVec3("shipPosition", ShipPosition);
+    // Kelvin waves
     mShaderOceanWake->setBool("bKelvinWakes", bKelvinWakes);
     mShaderOceanWake->setFloat("amplitude", 0.15f * shipVelocity);
     mShaderOceanWake->setFloat("kelvinScale", kelvinScale);
     mShaderOceanWake->setFloat("centerFore", centerFore);
     int layer = int(100.0f * fabs(shipVelocity) / sqrt(9.81f * LWL)) + baseFroude;   // Froude is (layer + 1) / 100
     layer = glm::clamp(layer, 0, 100);
-    //cout << layer << endl;
     mShaderOceanWake->setInt("texLayer", layer);
+    // Light
+    mShaderOceanWake->setVec3("oceanColor", OceanColor);
     mShaderOceanWake->setFloat("transparency", Transparency);
     mShaderOceanWake->setVec3("sunColor", mSky->SunDiffuse);
     mShaderOceanWake->setInt("bEnvmap", bEnvmap);
@@ -1684,15 +1719,15 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     mShaderOceanWake->setVec3("absorbanceColor", mSky->AbsorbanceColor);
     mShaderOceanWake->setFloat("absorbanceCoeff", mSky->AbsorbanceCoeff);
     mShaderOceanWake->setVec3("sunDir", glm::normalize(mSky->SunPosition));
+    // Wake
     mShaderOceanWake->setVec2("shipPivot", vec2(ShipPosition.x, ShipPosition.z));
     mShaderOceanWake->setFloat("shipRotation", -ShipRotation);
     mShaderOceanWake->setVec2("shipSize", vec2(TexContourShipW, TexContourShipH));
-    if(bTexWakeByVAO)
-        mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeVaoSize));
-    else
-        mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeBufferSize));
+    if(bTexWakeByVAO) mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeVaoSize));
+    else              mShaderOceanWake->setVec2("wakeSize", vec2(TexWakeBufferSize));
     mShaderOceanWake->setFloat("time", 0.001f * t);
     mShaderOceanWake->setBool("bWake", g_bShipWake);
+    // Shadow
     mShaderOceanWake->setBool("bShowPatch", bShowPatch);
     mShaderOceanWake->setMat4("matLightViewProj", LightViewProjection);
     mShaderOceanWake->setBool("bShipShadow", g_bShipShadow);
@@ -1740,16 +1775,17 @@ void Ocean::Render(const float t, Camera& camera, vec3& ShipPosition, float Ship
     glActiveTexture(GL_TEXTURE12);
     glBindTexture(GL_TEXTURE_2D, TexShadowMap);
 
-    for (auto& patch : vPatches)
+    for (int i = iMinPatchDecal; i <= iMaxPatchDecal; i++)
     {
-        int boatPatchX = patch.first;
-        int boatPatchZ = patch.second;
-        vec3 center = vec3(PATCH_SIZE * boatPatchX, 0, PATCH_SIZE * boatPatchZ);
-        mShaderOceanWake->setMat4("matLocal", glm::translate(mat4(1.0f), center));
-        glDrawElements(GL_TRIANGLES, mIndicesCount, GL_UNSIGNED_INT, 0);
-    }
-    
-    sumPatches += vPatches.size();
+        for (int j = jMinPatchDecal; j <= jMaxPatchDecal; j++)
+        {
+            vec3 center = vec3(PATCH_SIZE * i, 0, PATCH_SIZE * j);
+            mShaderOceanWake->setMat4("matLocal", glm::translate(mat4(1.0f), center));
+            glDrawElements(GL_TRIANGLES, mIndicesCount, GL_UNSIGNED_INT, 0);
+        }
+	}
+ 
+    //sumPatches += (iMaxPatchDecal - iMinPatchDecal + 1) * (jMaxPatchDecal - jMinPatchDecal + 1);
     //cout << sumPatches << endl;
 
     glActiveTexture(GL_TEXTURE0);

@@ -10,6 +10,7 @@ extern GLuint   TexWakeVao;
 extern int      TexWakeVaoSize;
 extern bool     bTexWakeByVAO;
 
+
 // Callbacks
 GLFWmonitor* get_current_monitor(GLFWwindow* window)
 {
@@ -48,22 +49,30 @@ GLFWmonitor* get_current_monitor(GLFWwindow* window)
 }
 void SwitchToFullScreen()
 {
+    static uint32_t oldWindowX;
+    static uint32_t oldWindowY;
     static uint32_t oldWindowW;
     static uint32_t oldWindowH;
 
     if (!g_IsFullScreen)    // -> Switch to fullscreen
     {
+        oldWindowX = g_WindowX;
+        oldWindowY = g_WindowY;
         oldWindowW = g_WindowW;
         oldWindowH = g_WindowH;
-        
+
         GLFWmonitor* targetMonitor = get_current_monitor(g_hWindow);
         const GLFWvidmode* mode = glfwGetVideoMode(targetMonitor);
         glfwSetWindowMonitor(g_hWindow, targetMonitor, 0, 0, mode->width, mode->height, mode->refreshRate);
     }
     else
     {
-        // Restore old state
-        glfwSetWindowMonitor(g_hWindow, NULL, g_WindowX, g_WindowY, oldWindowW, oldWindowH, 0);
+        int left, top, right, bottom;
+        glfwGetWindowFrameSize(g_hWindow, &left, &top, &right, &bottom);
+
+        glfwSetWindowMonitor(g_hWindow, 0, oldWindowX - left, oldWindowY - top, oldWindowW, oldWindowH, 0);// Restore old state
+        glfwSetWindowPos(g_hWindow, oldWindowX, oldWindowY);
+        glfwSetWindowSize(g_hWindow, oldWindowW, oldWindowH);
     }
 
     g_IsFullScreen = !g_IsFullScreen;
@@ -157,7 +166,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     g_Clouds.release();
-    g_Clouds = make_unique<VolumetricClouds>(g_WindowW, g_WindowH, g_WindSpeedKN);
+    g_Clouds = make_unique<Clouds>(g_WindowW, g_WindowH, g_TWS_Kn);
     int sunHour = g_Sky->SunHour;
     int sunMinute = g_Sky->SunMinute;
     g_Sky.release();
@@ -281,6 +290,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
             }
             g_Sky->SetTime(hm.hour, hm.minute);
             g_Ship->bLights = g_Sky->SunPosition.y < 0.0f ? true : false;
+			g_Traffics->bLights = g_Ship->bLights;
             return;
         }
         else if (IsInRect(g_CtrlTimeMinute, mouse))
@@ -316,19 +326,20 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
             }
             g_Sky->SetTime(hm.hour, hm.minute);
             g_Ship->bLights = g_Sky->SunPosition.y < 0.0f ? true : false;
+            g_Traffics->bLights = g_Ship->bLights;
             return;
         }
         else if (IsInRect(g_CtrlWind, mouse))
         {
             if (yoffset < 0)
-                g_WindSpeedKN--;
+                g_TWS_Kn--;
             else
-                g_WindSpeedKN++;
-            g_WindSpeedKN = glm::clamp(g_WindSpeedKN, 1.0f, 30.0f);
-            g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
+                g_TWS_Kn++;
+            g_TWS_Kn = glm::clamp(g_TWS_Kn, 1.0f, 30.0f);
+            g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
             g_Ocean->GetWind(g_Wind);
             g_Ocean->InitFrequencies();
-            g_Clouds->SetCloudSpeed(g_WindSpeedKN);
+            g_Clouds->SetCloudSpeed(g_TWS_Kn);
             return;
         }
         else if (IsInRect(g_CtrlAutopilotM1, mouse))
@@ -339,10 +350,22 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
                 if (g_Ship->HDGInstruction < 0)
                     g_Ship->HDGInstruction += 360;
             }
+            if (yoffset > 0)
+            {
+                g_Ship->HDGInstruction++;
+                if (g_Ship->HDGInstruction > 360)
+                    g_Ship->HDGInstruction -= 360;
+            }
             return;
         }
         if (IsInRect(g_CtrlAutopilotP1, mouse))
         {
+            if (yoffset < 0)
+            {
+                g_Ship->HDGInstruction--;
+                if (g_Ship->HDGInstruction < 0)
+                    g_Ship->HDGInstruction += 360;
+            }
             if (yoffset > 0)
             {
                 g_Ship->HDGInstruction++;
@@ -359,10 +382,6 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
                 if (g_Ship->HDGInstruction < 0)
                     g_Ship->HDGInstruction += 360;
             }
-            return;
-        }
-        if (IsInRect(g_CtrlAutopilotP10, mouse))
-        {
             if (yoffset > 0)
             {
                 g_Ship->HDGInstruction += 10;
@@ -371,7 +390,22 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
             }
             return;
         }
-
+        if (IsInRect(g_CtrlAutopilotP10, mouse))
+        {
+            if (yoffset < 0)
+            {
+                g_Ship->HDGInstruction -= 10;
+                if (g_Ship->HDGInstruction < 0)
+                    g_Ship->HDGInstruction += 360;
+            }
+            if (yoffset > 0)
+            {
+                g_Ship->HDGInstruction += 10;
+                if (g_Ship->HDGInstruction > 360)
+                    g_Ship->HDGInstruction -= 360;
+            }
+            return;
+        }
     }
     else if (!ImGui::GetIO().WantCaptureMouse)
     {
@@ -419,11 +453,6 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
                 g_Ship->HDGInstruction -= 360;
             return;
         }
-        if (IsInRect(g_CtrlAutopilotDynAdjust, mouse))
-        {
-            g_Ship->bDynamicAdjustment = !g_Ship->bDynamicAdjustment;
-            return;
-        }
         if (IsInRect(g_CtrlThrottle1, mouse))
         {
             float valeur = 1 - (mouse.y - g_CtrlThrottleHigh1) / (g_CtrlThrottleLow1 - g_CtrlThrottleHigh1);
@@ -453,6 +482,27 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         {
             g_Sky->SetNow();
         }
+        if (IsInRect(g_CtrlSound, mouse))
+        {
+            g_SoundMgr->bSound = !g_SoundMgr->bSound;
+        }
+        if (IsInRect(g_CtrlTimer, mouse))
+        {
+            g_ChronoStep++;
+            if (g_ChronoStep > 2) g_ChronoStep = 0;
+            switch (g_ChronoStep)
+            {
+            case 0: g_bChrono = true; g_Chrono.restart();  break;
+            case 1: g_Chrono.stop(); break;
+            case 2: g_bChrono = false; break;
+            }
+        }
+        if (IsInRect(g_CtrlMto1, mouse))
+            SetMeteo(1);
+        if (IsInRect(g_CtrlMto2, mouse))
+            SetMeteo(2);
+        if (IsInRect(g_CtrlMto3, mouse))
+            SetMeteo(3);
     }
    
     if (button == 1 && action == GLFW_PRESS)
@@ -478,12 +528,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             g_bPause = !g_bPause;
             if (g_bPause)   g_TimerShipMotion.stop();
             else            g_TimerShipMotion.start();
-            break;
-        case GLFW_KEY_ENTER:
-            if (g_Chrono.isRunning())
-                g_Chrono.stop();
-            else
-                g_Chrono.restart();
             break;
         case GLFW_KEY_1:
             SetShip(0);
@@ -575,10 +619,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             g_Ship->PowerCurrentStep2 = g_Ship->ship.PowerStepMax * 7 / 10;
             break;
         case GLFW_KEY_KP_MULTIPLY:
-            g_Ship->SurgeVelocity = KnotsToMS(g_Ship->ship.SpeedTestKn);
+            g_Ship->SurgeVelocity = knot_to_ms(g_Ship->ship.SpeedTestKn);
             break;
         case GLFW_KEY_L:
             g_Ship->bLights = !g_Ship->bLights;
+            g_Traffics->bLights = g_Ship->bLights;
             break;
         case GLFW_KEY_N:
             g_bNightVision = !g_bNightVision;
@@ -606,7 +651,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             g_Ship->RudderCurrentStep--;
             if (g_Ship->RudderCurrentStep < -g_Ship->ship.RudderStepMax)
                 g_Ship->RudderCurrentStep = -g_Ship->ship.RudderStepMax;
-            g_Chrono.restart();
             break;
         // Power LEFT
         case GLFW_KEY_KP_7:
@@ -819,11 +863,9 @@ void debugCallbackToFile(GLenum source, GLenum type, GLuint id, GLenum severity,
 }
 
 #ifdef _DEBUG
-#define CONSOLE
-#define ONLY_HOUAT
+//#define CONSOLE
+#define DEMO // (Only Houat & HMS Clyde)
 #endif
-#define RECORD
-//#define DEMO
 
 int main()
 {
@@ -854,9 +896,9 @@ int main()
     int left, top, right, bottom;
     glfwGetWindowFrameSize(g_hWindow, &left, &top, &right, &bottom);
     const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-    int dw = (mode->width - g_WindowW) / 2;
-    int dh = (mode->height - g_WindowH) / 2;
-    glfwSetWindowPos(g_hWindow, dw, dh + top);
+    g_WindowX = (mode->width - g_WindowW) / 2;
+    g_WindowY = (mode->height - g_WindowH) / 2;
+    glfwSetWindowPos(g_hWindow, g_WindowX, g_WindowY + top);
 
     glfwMakeContextCurrent(g_hWindow);
 
@@ -868,22 +910,9 @@ int main()
     if (!gladLoadGL())
         return -1;  // Unable to load OpenGL extensions
 
-#if 0
-    const GLubyte* version = glGetString(GL_VERSION);
-    std::cout << "Version OpenGL: " << version << std::endl;
-    const GLubyte* shading_version = glGetString(GL_SHADING_LANGUAGE_VERSION);
-    std::cout << "Version GLSL: " << shading_version << std::endl;
-    GLint profile;
-    glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
-    if (profile & GL_CONTEXT_CORE_PROFILE_BIT)                  cout << "Profil Core" << endl;
-    else if (profile & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT)    cout << "Profil Compatibility" << endl;
-    else                                                        cout << "Profil Not Specified" << endl;
-#endif
-
     glEnable(GL_MULTISAMPLE);
 
     g_hWnd = glfwGetWin32Window(g_hWindow);
-    g_DirExecutable = GetExecutablePath();
 
     // Viewport Configuration
     glViewport(0, 0, g_WindowW, g_WindowH);
@@ -906,21 +935,25 @@ int main()
     //glDebugMessageCallback(debugCallbackToFile, nullptr);
 #endif
 
-    //GetLimitsGPU();
+    //GetOpenGLInfo();
+
+    InitNanoVg();
+    RenderSplashScreen("Interface ...");
 
     InitImGUI();
-    InitNanoVg();
     InitFPSCounter();
     InitScene();
-    //DisplayWaveParametersFromModels(KnotsToMS(g_WindSpeedKN), 50000.0);
+    //DisplayWaveParametersFromModels(knot_to_ms(g_TWS_Kn), 50000.0);
 
     // Main rendering loop
     while (!glfwWindowShouldClose(g_hWindow))
     {
+        float time = g_TimeSpeed * g_TimerShipMotion.getTime();
+        
         // Camera zoom
         static float fov = g_Camera.GetZoom();
         if (g_bBinoculars && g_Camera.GetPosition().y > 0.0f)
-            g_Camera.SetZoom(15.0f);
+            g_Camera.SetZoom(45.0f / 7.0f);
         else
             g_Camera.SetZoom(fov);
 
@@ -942,31 +975,30 @@ int main()
             // View -> Look back
             if (g_eBridgeView == eBridgeView::STERN)
                 viewTarget = g_Ship->TransformPosition(vec3(-1000.0f, viewPos.y, 0.0f)) - g_Ship->ship.Position;
-            g_Camera.Animate(g_TimeSpeed * g_TimerShipMotion.getTime(), orbitalTarget, viewPos, viewTarget);
+            g_Camera.Animate(time, orbitalTarget, viewPos, viewTarget);
         }
         else
         {
             vec3 pos = vec3(0.0f);
             vec3 p = vec3(0.0f);
             vec3 t = vec3(0.0f);
-            g_Camera.Animate(g_TimeSpeed * g_TimerShipMotion.getTime(), pos, p, t);
+            g_Camera.Animate(time, pos, p, t);
         }
 
         // Updates
-        if (g_Ocean)    g_Ocean->Update(g_TimeSpeed * g_TimerShipMotion.getTime());
-        if (g_Ship)     g_Ship->Update(g_TimeSpeed * g_TimerShipMotion.getTime());
+        if (g_Ocean)    g_Ocean->Update(time);
+        if (g_Ship)     g_Ship->Update(time);
+        if (g_Traffics) g_Traffics->Update(time);
         CheckCrossingPort();
 
-#ifdef RECORD
-        static int counter = 0;
-        g_Ocean->GetRecordFromBuoy(vec2(0.0f, 0.0f), g_TimeSpeed * g_TimerShipMotion.getTime());
-        counter++;
-#endif
+        g_Ocean->GetRecordFromBuoy(vec2(0.0f, 0.0f), time);
         UpdateFPS();
         UpdateSounds();
 
         // Render all
         Render();
+
+        SendNMEA(time);
 
         // Buffer swapping and event handling
         glfwSwapBuffers(g_hWindow);
@@ -1003,19 +1035,23 @@ void InitScene()
     LoadPositions();
 
     // Camera
-    g_Camera.SetProjection(45.0f, g_WindowW, g_WindowH, 0.1f, 30000.f);
-    g_Camera.LookAt(vec3(-12.0f, 21.f, 100.f), vec3(0.f, 0.f, 0.f));
+    g_Camera.SetProjection(45.0f, g_WindowW, g_WindowH, 0.5f, 30000.f);
+    g_Camera.LookAt(vec3(-20.0f, 10.0f, 100.0f), vec3(0.0f, 0.0f, 0.0f));
     g_Camera.SetSpeeds(0.01f, 0.0025f);
     g_Camera.SetMode(eCameraMode::ORBITAL);
+    //mat4 proj = g_Camera.GetProjection();
+    //PrintGlmMatrix(proj, "Camera Projection Matrix");
 
     // Wind
-    g_WindDirectionDEG = 270.0f;
-    g_WindSpeedKN = 15.0f;
-    g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
+    g_TWS_Deg = 270.0f;
+    g_TWS_Kn = 15.0f;
+    g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
     
     // Sky & Clouds
+    RenderSplashScreen("Sky ...");
     g_Sky = make_unique<Sky>(g_InitialPosition, g_WindowW, g_WindowH);
-    g_Clouds = make_unique<VolumetricClouds>(g_WindowW, g_WindowH, g_WindSpeedKN);
+    RenderSplashScreen("Clouds ...");
+    g_Clouds = make_unique<Clouds>(g_WindowW, g_WindowH, g_TWS_Kn);
 
     // Shaders
     g_ShaderSun = make_unique<Shader>("Resources/Misc/sun.vert", "Resources/Misc/sun.frag");              // Light from sun
@@ -1024,11 +1060,13 @@ void InitScene()
     g_ShaderPostProcessing = make_unique<Shader>("Resources/Misc/post_processing.vert", "Resources/Misc/post_processing.frag");   // Mist + fog + underwater
     g_ShaderFXAA = make_unique<Shader>("Resources/Misc/fxaa.vert", "Resources/Misc/fxaa.frag");
     g_ShaderRain = make_unique<Shader>("Resources/Sky/rain.vert", "Resources/Sky/rain.frag");
-    
+	g_ShaderRainVolume = make_unique<Shader>("Resources/Sky/rain_volume.vert", "Resources/Sky/rain_volume.frag");
+
     // Models
     LoadModels();
 
     // Oceans
+    RenderSplashScreen("Ocean ...");
     g_Ocean = make_unique<Ocean>(g_Wind, g_Sky.get());
     g_Ocean->bVisible = true;
 
@@ -1038,23 +1076,35 @@ void InitScene()
     // Timer
     g_TimerShipMotion.start();
 
-    // Terrains
+    //Terrains
+    RenderSplashScreen("Terrain ...");
     LoadTerrains();
     LoadPortContour();
 
     // Markup
+    RenderSplashScreen("Markup ...");
     g_Markup = make_unique<Markup>(L"Resources/Terrains/Islands/Markup-BHH.xml");
+    g_Lighthouses = make_unique<LighthouseMgr>(L"Resources/Terrains/Islands/Lighthouses-BHH.xml");
 
     // Sounds
+    RenderSplashScreen("Sounds ...");
     LoadSounds();
     
     // Ships
+    RenderSplashScreen("Ship ...");
     LoadShips();
     SetShip(6);
     g_Ship->bLights = g_Sky->SunPosition.y < 0.0f ? true : false;
 
+    // Traffic
+    RenderSplashScreen("Traffic ...");
+    g_Traffics = make_unique<Traffics>("Resources/Traffic/traffic.xml");
+    g_Traffics->bLights = g_Ship->bLights;
+
     glEnable(GL_PROGRAM_POINT_SIZE);
     InitFBO();
+
+    g_UdpSender = make_unique<UdpSender>("127.0.0.1", 54000);
 }
 void InitFBO()
 {
@@ -1189,10 +1239,30 @@ void InitFBO()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+	// FBO ocean for rain volume ================================================
+
+    // Création (même taille que msFBO_SCENE)
+    glGenFramebuffers(1, &FBO_OCEAN_TEMP);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO_OCEAN_TEMP);
+
+    // Color
+    glGenTextures(1, &TexOceanTempColor);
+    glBindTexture(GL_TEXTURE_2D, TexOceanTempColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, g_WindowW, g_WindowH, 0, GL_RGBA, GL_FLOAT, NULL);
+
+    // Depth
+    glGenTextures(1, &TexOceanTempDepth);
+    glBindTexture(GL_TEXTURE_2D, TexOceanTempDepth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, g_WindowW, g_WindowH, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, TexOceanTempColor, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, TexOceanTempDepth, 0);
+
     ////////////////////
 
     g_ScreenQuadPost = make_unique<ScreenQuad>();
     g_ScreenQuadCloud = make_unique<ScreenQuad>();
+	g_ScreenQuadRainVolume = make_unique<ScreenQuad>();
 }
 void InitImGUI()
 {
@@ -1213,19 +1283,65 @@ void InitNanoVg()
     ReleaseDC(NULL, screen);
     g_DevicePixelRatio = dpiX / 96.0f;        // 96 DPI is the default for many systems
 
-    int font = nvgCreateFont(g_Nvg, "arial", "c:/Windows/Fonts/Arial.ttf");
-    if (font == -1)
+    int fontArial = nvgCreateFont(g_Nvg, "arial", "c:/Windows/Fonts/Arial.ttf");
+    if (fontArial == -1)
         printf("Unable to load Arial font.\n");   // Handle font loading error
 
-    int fontId = nvgCreateFont(g_Nvg, "caveat", "Resources/Interface/Caveat.ttf");
-    if (fontId == -1)  
-        printf("Failed to load Caveat font.\n");
+    int fontCaveat = nvgCreateFont(g_Nvg, "caveat", "Resources/Interface/Caveat.ttf");
+    if (fontCaveat == -1)
+        printf("Unable to load Caveat font.\n");
+
+    g_NvgImgClock = LoadNvgIcon("Resources/Interface/clock_white.png");
+    if (g_NvgImgClock == -1)
+        printf("Unable to load clock png.\n");
+
+    g_NvgImgSoundOff = LoadNvgIcon("Resources/Interface/volume_off_white.png");
+    if (g_NvgImgSoundOff == -1)
+        printf("Unable to load volume_off png.\n");
+
+    g_NvgImgSoundUp = LoadNvgIcon("Resources/Interface/volume_up_white.png");
+    if (g_NvgImgSoundUp == -1)
+        printf("Unable to load volume_up png.\n");
+
+    g_NvgImgTimer = LoadNvgIcon("Resources/Interface/timer_white.png");
+    if (g_NvgImgTimer == -1)
+        printf("Unable to load timer png.\n");
+
+    g_NvgImgMto1 = LoadNvgIcon("Resources/Interface/clear.png");
+    if (g_NvgImgMto1 == -1)
+        printf("Unable to load clear png.\n");
+
+    g_NvgImgMto2 = LoadNvgIcon("Resources/Interface/cloud.png");
+    if (g_NvgImgMto2 == -1)
+        printf("Unable to load cloud png.\n");
+
+    g_NvgImgMto3 = LoadNvgIcon("Resources/Interface/foggy.png");
+    if (g_NvgImgMto3 == -1)
+        printf("Unable to load foggy png.\n");
 }
 void InitFPSCounter()
 {
     QueryPerformanceFrequency(&g_Frequency);
     QueryPerformanceCounter(&g_LastTime);
 }
+int  LoadNvgIcon(string name)
+{
+    // Load the image with stbi
+    int wi, hi, n, image;
+    unsigned char* img;
+    stbi_set_unpremultiply_on_load(1);
+    stbi_convert_iphone_png_to_rgb(1);
+    img = stbi_load(name.c_str(), &wi, &hi, &n, 4);
+    if (img == NULL)
+    {
+        // printf("Failed to load %s - %s\n", filename, stbi_failure_reason());
+        return -1;
+    }
+    image = nvgCreateImageRGBA(g_Nvg, wi, hi, 0, img);
+    stbi_image_free(img);
+    return image;
+}
+
 void LoadPositions()
 {
     if (g_vPositions.size() != 0)
@@ -1233,46 +1349,48 @@ void LoadPositions()
 
     const char* filename = "Resources/Terrains/Positions.xml";
     pugi::xml_document doc;
-    if (!doc.load_file(filename)) return;
+    if (doc.load_file(filename))
+    {
+        auto root = doc.child(L"Positions");
+        g_NoPosition = root.child(L"indexPosition").text().as_int();
 
-    auto root = doc.child(L"Positions");
-    g_NoPosition = root.child(L"indexPosition").text().as_int();
+        g_vPositions.clear();
+        for (auto node : root.children(L"Position"))
+        {
+            sPositions p;
+            p.name = wstring_to_utf8(node.attribute(L"name").as_string());
+            p.pos.x = node.attribute(L"lon").as_float();
+            p.pos.y = node.attribute(L"lat").as_float();
+            p.heading = node.attribute(L"heading").as_float();
+            g_vPositions.push_back(p);
+        }
 
-    g_vPositions.clear();
-    for (auto node : root.children(L"Position"))
+        if (g_NoPosition > g_vPositions.size())
+            g_NoPosition = g_vPositions.size() - 1;
+    }
+    else
     {
         sPositions p;
-        p.name = wstring_to_utf8(node.attribute(L"name").as_string());
-        p.pos.x = node.attribute(L"lon").as_float();
-        p.pos.y = node.attribute(L"lat").as_float();
-        p.heading = node.attribute(L"heading").as_float();
+        p.name = "Treac'h er Goured";
+        p.pos.x = -2.94097114;
+        p.pos.y = 47.3816223;
+        p.heading = 90;
         g_vPositions.push_back(p);
+        g_NoPosition = 0;
     }
-}
-void SavePositions()
-{
-    const char* filename = "Resources/Terrains/Positions.xml";
-    pugi::xml_document doc;
-
-    auto root = doc.append_child(L"Positions");
-    auto indexNode = root.append_child(L"indexPosition");
-    indexNode.text().set(g_NoPosition);
-
-    for (const auto& p : g_vPositions)
-    {
-        auto node = root.append_child(L"Position");
-        node.append_attribute(L"name") = utf8_to_wstring(p.name).c_str();
-        node.append_attribute(L"lon") = p.pos.x;
-        node.append_attribute(L"lat") = p.pos.y;
-        node.append_attribute(L"heading") = p.heading;
-    }
-    doc.save_file(filename, L"  "); // indents the XML
 }
 void SetPosition()
 {
-    g_Ship->ship.Position = LonLatToOpenGL(g_vPositions[g_NoPosition].pos.x, g_vPositions[g_NoPosition].pos.y);
+    g_Ship->ship.Position = lonlat_to_opengl(g_vPositions[g_NoPosition].pos.x, g_vPositions[g_NoPosition].pos.y);
     g_Ship->SetYawFromHDG(g_vPositions[g_NoPosition].heading);
     g_Ship->ResetVelocities();
+    g_Ship->PowerCurrentStep1 = 0;
+    g_Ship->PowerCurrentStep2 = 0;
+    g_Ship->PropRpm1 = 0.0f;
+    g_Ship->PropRpm2 = 0.0f;
+    g_Ship->RudderCurrentStep = 0;
+    g_Ship->RudderAngleDeg = 0.0f;
+
     g_Ship->bVisible = true;
     g_Camera.SetFirstUpdate(true);
     if (g_Camera.GetMode() == eCameraMode::BRIDGE)
@@ -1287,9 +1405,9 @@ void SetHeading(float heading)
 }
 void LoadModels()
 {
-    // Floating ball
-    g_FloatingBall = make_unique<Sphere>(0.5f, 32); // Radius of 0.5 m (diameter of 1 m)
-    g_FloatingBall->bVisible = false;
+    // Balls
+    g_StaticBall = make_unique<Sphere>(0.5f, 32); // Radius of 0.5 m (diameter of 1 m)
+    g_StaticBall->bVisible = false;
     
     // Grid XZ
     g_Grid = make_unique<Grid>(10, 1);
@@ -1332,6 +1450,10 @@ void ReadObjHeader(sTerrain& terrain)
             }
         }
         file.close();
+        terrain.xMin = lon_to_opengl(terrain.xMin);
+        terrain.xMax = lon_to_opengl(terrain.xMax);
+        terrain.zMin = lat_to_opengl(terrain.zMin);
+        terrain.zMax = lat_to_opengl(terrain.zMax);
     }
 }
 void LoadTerrains()
@@ -1342,27 +1464,26 @@ void LoadTerrains()
         int n = 0;
         for (auto& file : files)
 		{
-            if (file.find("c3") != string::npos)
+            if (file.find("c1_") != string::npos)
             {
                 g_idxHouat = n;
             }
             else
             {
-#ifdef ONLY_HOUAT
+#ifdef DEMO
                 continue;
 #endif
             }
             sTerrain terrain;
 			terrain.file = file;
 			ReadObjHeader(terrain);
-			terrain.pos = LonLatToOpenGL(terrain.center.x, terrain.center.y);
+			terrain.pos = lonlat_to_opengl(terrain.center.x, terrain.center.y);
 			terrain.scale = vec3(1.0f);
 			terrain.model = make_unique<Model>(terrain.file);
 			g_vTerrains.push_back(move(terrain));
             n++;
 		}
     }
-    g_Pier = make_unique<Model>("Resources/Terrains/Islands/pier.gltf");
     g_Port = make_unique<Model>("Resources/Terrains/Islands/port.gltf");
 }
 void LoadPortContour()
@@ -1442,7 +1563,7 @@ void LoadShips()
         ship.ShortName = wstring_to_utf8(ini.GetString(L"Files",  L"ShortName", const_cast<wchar_t*>(ws.c_str())));
 #ifdef DEMO
         if (ship.ShortName != "HMS Clyde")
-            return;
+            continue;
 #endif
         ship.PathnameHull = wstring_to_utf8(ini.GetString(L"Files", L"PathnameHull", const_cast<wchar_t*>(ws.c_str())));
         ship.PathnameFull = wstring_to_utf8(ini.GetString(L"Files", L"PathnameFull", const_cast<wchar_t*>(ws.c_str())));
@@ -1475,10 +1596,10 @@ void LoadShips()
         ship.HeaveCoef = ini.GetFloat(L"Dimensions", L"HeaveCoef", ship.HeaveCoef);
         ship.FormFactor = ini.GetFloat(L"Dimensions", L"FormFactor", ship.FormFactor);
         ship.EnvMapFactor = ini.GetFloat(L"Dimensions", L"EnvMapFactor", ship.EnvMapFactor);
-        ship.AreaFront = ini.GetFloat(L"Dimensions", L"AreaFront", ship.AreaFront);
-        ship.AreaFrontCenter = ini.GetVec3(L"Dimensions", L"AreaFrontCenter", ship.AreaFrontCenter);
-        ship.AreaLat = ini.GetFloat(L"Dimensions", L"AreaLat", ship.AreaLat);
-        ship.AreaLatCenter = ini.GetVec3(L"Dimensions", L"AreaLatCenter", ship.AreaLatCenter);
+        ship.mAreaFront = ini.GetFloat(L"Dimensions", L"AreaFront", ship.mAreaFront);
+        ship.mAreaFrontCenter = ini.GetVec3(L"Dimensions", L"AreaFrontCenter", ship.mAreaFrontCenter);
+        ship.mAreaLat = ini.GetFloat(L"Dimensions", L"AreaLat", ship.mAreaLat);
+        ship.mAreaLatCenter = ini.GetVec3(L"Dimensions", L"AreaLatCenter", ship.mAreaLatCenter);
 
         // Spray
         ship.SprayVerticalPerf = ini.GetFloat(L"Spray", L"SprayVerticalPerf", ship.SprayVerticalPerf);
@@ -1488,7 +1609,7 @@ void LoadShips()
 
         // Rudder
         ship.PosRudder = ini.GetVec3(L"Rudder", L"PosRudder", ship.PosRudder);
-        ship.RudderIncrement = ini.GetFloat(L"Rudder", L"RudderIncrement", ship.RudderIncrement);
+        ship.RudderIncrement = ini.GetInt(L"Rudder", L"RudderIncrement", ship.RudderIncrement);
         ship.RudderStepMax = ini.GetInt(L"Rudder", L"RudderStepMax", ship.RudderStepMax);
         ship.RudderRotSpeed = ini.GetFloat(L"Rudder", L"RudderRotSpeed", ship.RudderRotSpeed);
         ship.nRudder = ini.GetInt(L"Rudder", L"nRudder", ship.nRudder);
@@ -1514,9 +1635,9 @@ void LoadShips()
         ship.PropRpmIncrement = ini.GetFloat(L"Propellers", L"PropRpmIncrement", ship.PropRpmIncrement);
         ship.nPropeller = ini.GetInt(L"Propellers", L"nPropeller", ship.nPropeller);
         ship.PosPropeller1 = ini.GetVec3(L"Propellers", L"PosPropeller1", ship.PosPropeller1);
-        ship.PropTorque1 = ini.GetFloat(L"Propellers", L"PropTorque1", ship.PropTorque1);
+        ship.mPropTorque1 = ini.GetFloat(L"Propellers", L"PropTorque1", ship.mPropTorque1);
         ship.PosPropeller2 = ini.GetVec3(L"Propellers", L"PosPropeller2", ship.PosPropeller2);
-        ship.PropTorque2 = ini.GetFloat(L"Propellers", L"PropTorque2", ship.PropTorque2);
+        ship.mPropTorque2 = ini.GetFloat(L"Propellers", L"PropTorque2", ship.mPropTorque2);
         ship.PropDiameter = ini.GetFloat(L"Propellers", L"PropDiameter", ship.PropDiameter);
         ship.WakeWidth = ini.GetFloat(L"Propellers", L"WakeWidth", ship.WakeWidth);
 
@@ -1561,11 +1682,6 @@ void LoadShips()
         ship.BaseI = ini.GetFloat(L"Autopilot", L"BaseI", ship.BaseI);
         ship.BaseD = ini.GetFloat(L"Autopilot", L"BaseD", ship.BaseD);
         ship.MaxIntegral = ini.GetFloat(L"Autopilot", L"MaxIntegral", ship.MaxIntegral);
-        ship.MinSpeed = ini.GetFloat(L"Autopilot", L"MinSpeed", ship.MinSpeed);
-        ship.LowSpeedBoost = ini.GetFloat(L"Autopilot", L"LowSpeedBoost", ship.LowSpeedBoost);
-        ship.HighSpeedLimit = ini.GetFloat(L"Autopilot", L"HighSpeedLimit", ship.HighSpeedLimit);
-        ship.DynamicFactor = ini.GetFloat(L"Autopilot", L"DynamicFactor", ship.DynamicFactor);
-        ship.SeaSateFactor = ini.GetFloat(L"Autopilot", L"SeaSateFactor", ship.SeaSateFactor);
 
         // Waves
         ship.CenterFore = ini.GetFloat(L"Waves", L"CenterFore", ship.CenterFore);
@@ -1579,153 +1695,40 @@ void LoadShips()
         g_vShips.push_back(ship);
     }
 }
-void SaveShips()
-{
-    for (const auto& ship : g_vShips)
-    {
-        Ini ini;
-        wstring file = L"Resources/Ships/" + utf8_to_wstring(ship.ShortName) + L".ini";
-        ini.Load(const_cast<wchar_t*>(file.c_str()));
-
-        // Files
-        ini.SetString(L"Files", L"ShortName", utf8_to_wstring(ship.ShortName));
-        ini.SetString(L"Files", L"PathnameHull", utf8_to_wstring(ship.PathnameHull));
-        ini.SetString(L"Files", L"PathnameFull", utf8_to_wstring(ship.PathnameFull));
-        ini.SetString(L"Files", L"PathnamePropeller1", utf8_to_wstring(ship.PathnamePropeller1));
-        ini.SetString(L"Files", L"PathnamePropeller2", utf8_to_wstring(ship.PathnamePropeller2));
-        ini.SetString(L"Files", L"PathnameRudder", utf8_to_wstring(ship.PathnameRudder));
-        ini.SetString(L"Files", L"PathnameRadar1", utf8_to_wstring(ship.PathnameRadar1));
-        ini.SetString(L"Files", L"PathnameRadar2", utf8_to_wstring(ship.PathnameRadar2));
-        ini.SetString(L"Files", L"PathnameFlag", utf8_to_wstring(ship.PathnameFlag));
-        ini.SetString(L"Files", L"ThrustSound", utf8_to_wstring(ship.ThrustSound));
-        ini.SetString(L"Files", L"BowThrusterSound", utf8_to_wstring(ship.BowThrusterSound));
-        ini.SetString(L"Files", L"SternThrusterSound", utf8_to_wstring(ship.SternThrusterSound));
-
-        // Positions
-        ini.SetVec3(L"Positions", L"Position", ship.Position);
-        ini.SetVec3(L"Positions", L"Rotation", ship.Rotation);
-        ini.SetVec3(L"Positions", L"ViewWheel", ship.ViewWheel);
-        ini.SetVec3(L"Positions", L"ViewLeft", ship.ViewLeft);
-        ini.SetVec3(L"Positions", L"ViewRight", ship.ViewRight);
-        ini.SetVec3(L"Positions", L"ViewBow", ship.ViewBow);
-        ini.SetVec3(L"Positions", L"ViewStern", ship.ViewStern);
-
-        // Dimensions
-        ini.SetInt(L"Dimensions", L"Class", static_cast<int>(ship.Class));
-        ini.SetFloat(L"Dimensions", L"Length", ship.Length);
-        ini.SetFloat(L"Dimensions", L"SpeedMaxKn", ship.SpeedMaxKn);
-        ini.SetFloat(L"Dimensions", L"SpeedTestKn", ship.SpeedTestKn);
-        ini.SetFloat(L"Dimensions", L"Mass_t", ship.Mass_t);
-        ini.SetVec3(L"Dimensions", L"PosGravity", ship.PosGravity);
-        ini.SetFloat(L"Dimensions", L"HeaveCoef", ship.HeaveCoef);
-        ini.SetFloat(L"Dimensions", L"FormFactor", ship.FormFactor);
-        ini.SetFloat(L"Dimensions", L"EnvMapFactor", ship.EnvMapFactor);
-        ini.SetFloat(L"Dimensions", L"AreaFront", ship.AreaFront);
-        ini.SetVec3(L"Dimensions", L"AreaFrontCenter", ship.AreaFrontCenter);
-        ini.SetFloat(L"Dimensions", L"AreaLat", ship.AreaLat);
-        ini.SetVec3(L"Dimensions", L"AreaLatCenter", ship.AreaLatCenter);
-
-        // Spray
-        ini.SetFloat(L"Spray", L"SprayVerticalPerf", ship.SprayVerticalPerf);
-        ini.SetInt(L"Spray", L"SprayMultiplier", ship.SprayMultiplier);
-        ini.SetFloat(L"Spray", L"SprayLength", ship.SprayLength);
-        ini.SetInt(L"Spray", L"SprayType", ship.SprayType);
-
-        // Rudder
-        ini.SetVec3(L"Rudder", L"PosRudder", ship.PosRudder);
-        ini.SetFloat(L"Rudder", L"RudderIncrement", ship.RudderIncrement);
-        ini.SetInt(L"Rudder", L"RudderStepMax", ship.RudderStepMax);
-        ini.SetFloat(L"Rudder", L"RudderRotSpeed", ship.RudderRotSpeed);
-        ini.SetInt(L"Rudder", L"nRudder", ship.nRudder);
-        ini.SetVec3(L"Rudder", L"PosRudder1", ship.PosRudder1);
-        ini.SetVec3(L"Rudder", L"PosRudder2", ship.PosRudder2);
-
-        // Turning
-        ini.SetFloat(L"Turning", L"TurningPerf", ship.TurningPerf);
-        ini.SetFloat(L"Turning", L"TurningDragCoef", ship.TurningDragCoef);
-        ini.SetFloat(L"Turning", L"RoTMax", ship.RoTMax);
-        ini.SetFloat(L"Turning", L"HighSpeedCoeff", ship.HighSpeedCoeff);
-        ini.SetFloat(L"Turning", L"PivotFwd", ship.PivotFwd);
-        ini.SetFloat(L"Turning", L"PivotBwd", ship.PivotBwd);
-        ini.SetFloat(L"Turning", L"CentrifugalPerf", ship.CentrifugalPerf);
-
-        // Power
-        ini.SetVec3(L"Power", L"PosPower", ship.PosPower);
-        ini.SetFloat(L"Power", L"PowerkW", ship.PowerkW);
-        ini.SetInt(L"Power", L"PowerStepMax", ship.PowerStepMax);
-
-        // Propellers
-        ini.SetFloat(L"Propellers", L"PropRpmMax", ship.PropRpmMax);
-        ini.SetFloat(L"Propellers", L"PropRpmIncrement", ship.PropRpmIncrement);
-        ini.SetInt(L"Propellers", L"nPropeller", ship.nPropeller);
-        ini.SetVec3(L"Propellers", L"PosPropeller1", ship.PosPropeller1);
-        ini.SetFloat(L"Propellers", L"PropTorque1", ship.PropTorque1);
-        ini.SetVec3(L"Propellers", L"PosPropeller2", ship.PosPropeller2);
-        ini.SetFloat(L"Propellers", L"PropTorque2", ship.PropTorque2);
-        ini.SetFloat(L"Propellers", L"PropDiameter", ship.PropDiameter);
-        ini.SetFloat(L"Propellers", L"WakeWidth", ship.WakeWidth);
-
-        // Chimneys
-        ini.SetInt(L"Chimneys", L"nChimney", ship.nChimney);
-        ini.SetVec3(L"Chimneys", L"PosChimney1", ship.PosChimney1);
-        ini.SetVec3(L"Chimneys", L"PosChimney2", ship.PosChimney2);
-
-        // Bow Thruster
-        ini.SetBoolean(L"BowThruster", L"HasBowThruster", ship.HasBowThruster);
-        ini.SetVec3(L"BowThruster", L"PosBowThruster", ship.PosBowThruster);
-        ini.SetFloat(L"BowThruster", L"BowThrusterPerf", ship.BowThrusterPerf);
-        ini.SetFloat(L"BowThruster", L"BowThrusterPowerW", ship.BowThrusterPowerW);
-        ini.SetInt(L"BowThruster", L"BowThrusterStepMax", ship.BowThrusterStepMax);
-        ini.SetFloat(L"BowThruster", L"BowThrusterRpmMin", ship.BowThrusterRpmMin);
-        ini.SetFloat(L"BowThruster", L"BowThrusterRpmMax", ship.BowThrusterRpmMax);
-        ini.SetFloat(L"BowThruster", L"BowThrusterRpmIncrement", ship.BowThrusterRpmIncrement);
-
-        // Stern Thruster
-        ini.SetBoolean(L"SternThruster", L"HasSternThruster", ship.HasSternThruster);
-        ini.SetVec3(L"SternThruster", L"PosSternThruster", ship.PosSternThruster);
-        ini.SetFloat(L"SternThruster", L"SternThrusterPerf", ship.SternThrusterPerf);
-        ini.SetFloat(L"SternThruster", L"SternThrusterPowerW", ship.SternThrusterPowerW);
-        ini.SetInt(L"SternThruster", L"SternThrusterStepMax", ship.SternThrusterStepMax);
-        ini.SetFloat(L"SternThruster", L"SternThrusterRpmMin", ship.SternThrusterRpmMin);
-        ini.SetFloat(L"SternThruster", L"SternThrusterRpmMax", ship.SternThrusterRpmMax);
-        ini.SetFloat(L"SternThruster", L"SternThrusterRpmIncrement", ship.SternThrusterRpmIncrement);
-
-        // Lights
-        ini.SetVec3Array(L"Lights", L"LightPositions", ship.LightPositions);
-        ini.SetVec3Array(L"Lights", L"LightColors", ship.LightColors);
-
-        // Radar
-        ini.SetInt(L"Radar", L"nRadar", ship.nRadar);
-        ini.SetVec3(L"Radar", L"PosRadar1", ship.PosRadar1);
-        ini.SetFloat(L"Radar", L"RotationRadar1", ship.RotationRadar1);
-        ini.SetVec3(L"Radar", L"PosRadar2", ship.PosRadar2);
-        ini.SetFloat(L"Radar", L"RotationRadar2", ship.RotationRadar2);
-
-        // Autopilot
-        ini.SetFloat(L"Autopilot", L"BaseP", ship.BaseP);
-        ini.SetFloat(L"Autopilot", L"BaseI", ship.BaseI);
-        ini.SetFloat(L"Autopilot", L"BaseD", ship.BaseD);
-        ini.SetFloat(L"Autopilot", L"MaxIntegral", ship.MaxIntegral);
-        ini.SetFloat(L"Autopilot", L"MinSpeed", ship.MinSpeed);
-        ini.SetFloat(L"Autopilot", L"LowSpeedBoost", ship.LowSpeedBoost);
-        ini.SetFloat(L"Autopilot", L"HighSpeedLimit", ship.HighSpeedLimit);
-        ini.SetFloat(L"Autopilot", L"DynamicFactor", ship.DynamicFactor);
-        ini.SetFloat(L"Autopilot", L"SeaSateFactor", ship.SeaSateFactor);
-
-        // Waves
-        ini.SetFloat(L"Waves", L"CenterFore", ship.CenterFore);
-        ini.SetInt(L"Waves", L"BaseFroude", ship.BaseFroude);
-
-        // Flag
-        ini.SetBoolean(L"Flag", L"bFlag", ship.bFlag);
-        ini.SetVec3(L"Flag", L"PosFlag", ship.PosFlag);
-        ini.SetFloat(L"Flag", L"DimXFlag", ship.DimXFlag);
-    }
-}
 void SetShip(int n)
 {
+    bool bTakeOldParameters = false;
+    vec3 position = vec3(0.0f);
+    float surgeVelocity = 0.0f;
+    float yawVelocity = 0.0f;
+    float yaw = 0.0f;
+    float powerCurrentStep1 = 0.0f;
+    float powerCurrentStep2 = 0.0f;
+    float propRpm1 = 0.0f;
+    float propRpm2 = 0.0f;
+    float rudderCurrentStep = 0.0f;
+    float rudderAngleDeg = 0.0f;
+
+    if (g_vShips.size() == 1)
+        n = 0;
+
     if (g_vShips.size() > 0 && n >= 0 && n < g_vShips.size())
     {
+        if (g_Ship.get() != 0)
+        {
+            bTakeOldParameters = true;
+            position = g_Ship->ship.Position;
+            surgeVelocity = g_Ship->SurgeVelocity / g_Ship->ship.SpeedMaxKn;
+            yawVelocity = g_Ship->YawVelocity;
+            yaw = g_Ship->Yaw;
+            powerCurrentStep1 = (float)g_Ship->PowerCurrentStep1 / (float)g_Ship->ship.PowerStepMax;
+            powerCurrentStep2 = (float)g_Ship->PowerCurrentStep2 / (float)g_Ship->ship.PowerStepMax;
+            propRpm1 = g_Ship->PropRpm1 / g_Ship->ship.PropRpmMax;
+            propRpm2 = g_Ship->PropRpm2 / g_Ship->ship.PropRpmMax;
+            rudderCurrentStep = (float)g_Ship->RudderCurrentStep / (float)g_Ship->ship.RudderStepMax;
+            rudderAngleDeg = g_Ship->RudderAngleDeg / (float)g_Ship->ship.RudderStepMax;
+        }
+        
         g_Ship.reset();
         
         g_NoShip = n;
@@ -1736,7 +1739,67 @@ void SetShip(int n)
         g_HighMass = g_vShips[g_NoShip].Mass_t * 2;
 
         SetPosition();
+
+        if (bTakeOldParameters)
+        {
+            g_Ship->ship.Position = position;
+            g_Ship->SurgeVelocity = surgeVelocity * g_Ship->ship.SpeedMaxKn;
+            g_Ship->YawVelocity = yawVelocity;
+            g_Ship->Yaw = yaw;
+            g_Ship->PowerCurrentStep1 = powerCurrentStep1 * g_Ship->ship.PowerStepMax;
+            g_Ship->PowerCurrentStep2 = powerCurrentStep2 * g_Ship->ship.PowerStepMax;
+            g_Ship->PropRpm1 = propRpm1 * g_Ship->ship.PropRpmMax;
+            g_Ship->PropRpm2 = propRpm2 * g_Ship->ship.PropRpmMax;
+            g_Ship->RudderCurrentStep = rudderCurrentStep * g_Ship->ship.RudderStepMax;
+            g_Ship->RudderAngleDeg = rudderAngleDeg * g_Ship->ship.RudderStepMax;
+        }
+
+        g_Ship->HDGInstruction = fmod(450.0f - glm::degrees(g_Ship->Yaw), 360.0f);
         g_bReset = true;
+    }
+}
+void SetMeteo(int n)
+{
+    switch (n)
+    {
+    case 1:
+        g_Clouds->Coverage = 0.0f;
+        g_Sky->FogDensity = 0.0f;
+        g_Sky->MistDensity = 0.00015f;
+        g_TWS_Kn = 5.0f;
+        g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
+        g_Ocean->GetWind(g_Wind);
+        g_Ocean->InitFrequencies();
+        g_Clouds->SetCloudSpeed(g_TWS_Kn);
+        g_Ocean->iOceanColor = 8;
+        g_Ocean->OceanColor = color_255_to_1(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
+        break;
+    
+    case 2:
+        g_Clouds->Coverage = 0.3f;
+        g_Sky->FogDensity = 0.0f;
+        g_Sky->MistDensity = 0.00015f;
+        g_TWS_Kn = 15.0f;
+        g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
+        g_Ocean->GetWind(g_Wind);
+        g_Ocean->InitFrequencies();
+        g_Clouds->SetCloudSpeed(g_TWS_Kn);
+        g_Ocean->iOceanColor = 6;
+        g_Ocean->OceanColor = color_255_to_1(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
+        break;
+    
+    case 3:
+        g_Clouds->Coverage = 0.0f;
+        g_Sky->FogDensity = 0.005f;
+        g_Sky->MistDensity = 0.0f;
+        g_TWS_Kn = 20.0f;
+        g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
+        g_Ocean->GetWind(g_Wind);
+        g_Ocean->InitFrequencies();
+        g_Clouds->SetCloudSpeed(g_TWS_Kn);
+        g_Ocean->iOceanColor = 1;
+        g_Ocean->OceanColor = color_255_to_1(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
+        break;
     }
 }
 void LoadSounds()
@@ -1868,7 +1931,65 @@ bool CheckCrossingPort()
     }
     return false; // no cut detected on the 4 lateral sides
 }
+void SendNMEA(float time)
+{
+    if (g_Ship.get() == 0)
+        return;
 
+    static double lastTime = 0.0;
+    static double lastSentAIVDM1 = 0.0;
+    static double lastSentAIVDM5 = 0.0;
+    static double initialDelayAIVDM5 = -1.0;
+
+    // Initialiser le générateur aléatoire une seule fois
+    static bool randInitialized = false;
+    if (!randInitialized)
+    {
+        srand(static_cast<unsigned int>(std::time(0)));
+        randInitialized = true;
+    }
+
+    // Déterminer le délai initial aléatoire pour la première émission AIVDM_5
+    if (initialDelayAIVDM5 < 0.0)
+        initialDelayAIVDM5 = (rand() % 60000) / 1000.0; // 0 à 60 secondes
+
+    // Envoyer toutes les 50 ms les phrases RMC, VHW, VWR
+    if (time - lastTime < 0.05)
+        return;
+
+    string sentence = g_Ship->NMEA_RMC();
+    if (!sentence.empty())
+        g_UdpSender->SendString(sentence);
+
+    sentence = g_Ship->NMEA_VHW();
+    if (!sentence.empty())
+        g_UdpSender->SendString(sentence);
+
+    sentence = g_Ship->NMEA_VWR();
+    if (!sentence.empty())
+        g_UdpSender->SendString(sentence);
+
+    // Envoyer NMEA_AIVDM_1 toutes les 2 secondes
+    if (time - lastSentAIVDM1 >= 2.0 || lastSentAIVDM1 == 0.0)
+    {
+        sentence = g_Traffics->NMEA_AIVDM_1();
+        if (!sentence.empty())
+            g_UdpSender->SendString(sentence);
+        lastSentAIVDM1 = time;
+    }
+
+    // Envoyer NMEA_AIVDM_5 avec délai initial aléatoire, puis toutes les 60 s, et choisir un index aléatoire à chaque émission
+    if ((lastSentAIVDM5 == 0.0 && time >= initialDelayAIVDM5) || (lastSentAIVDM5 > 0.0 && time - lastSentAIVDM5 >= 60.0))
+    {
+        int index = rand() % g_Traffics->vTraffics.size();
+        sentence = g_Traffics->NMEA_AIVDM_5(index);
+        if (!sentence.empty())
+            g_UdpSender->SendString(sentence);
+        lastSentAIVDM5 = time;
+    }
+
+    lastTime = time;
+}
 // Render 3D
 void RenderAxis()
 {
@@ -1884,39 +2005,39 @@ void RenderAxis()
 }
 void RenderBalls()
 {
-    if (!g_FloatingBall->bVisible)
+    if (!g_StaticBall->bVisible)
         return;
     
     float scale = 10.0f * g_Ship->ship.Length / 200.0f;
 
     // Limits of the turning circle
     vec3 red0 = vec3(50.0f, 0.0f, 0.0f);
-    g_FloatingBall->Render(g_Camera, red0, scale, vec3(1.0f, 0.4f, 0.5f));
+    g_StaticBall->Render(g_Camera, red0, scale, vec3(1.0f, 0.4f, 0.5f));
     vec3 red1 = vec3(50.0f + 4.5f * g_Ship->ship.Length, 0.0f, 0.0f);
-    g_FloatingBall->Render(g_Camera, red1, scale, vec3(1.0f, 0.4f, 0.5f));
+    g_StaticBall->Render(g_Camera, red1, scale, vec3(1.0f, 0.4f, 0.5f));
     vec3 red2 = vec3(50.0f + 4.5f * g_Ship->ship.Length, 0.0f, 5.0f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, red2, scale, vec3(1.0f, 0.4f, 0.5f));
+    g_StaticBall->Render(g_Camera, red2, scale, vec3(1.0f, 0.4f, 0.5f));
     vec3 red3 = vec3(50.0f, 0.0f, 5.0f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, red3, scale, vec3(1.0f, 0.4f, 0.5f));
+    g_StaticBall->Render(g_Camera, red3, scale, vec3(1.0f, 0.4f, 0.5f));
 
     // Optimum turning circle (3 L x 3 L)
 
     // 90° (3.5 L advance)
     vec3 green0 = vec3(50.0f + 3.5f * g_Ship->ship.Length, 0.0f, 2.5f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, green0, scale, vec3(0.4f, 1.0f, 0.5f));
+    g_StaticBall->Render(g_Camera, green0, scale, vec3(0.4f, 1.0f, 0.5f));
     // 180° (4 L width)
     vec3 green1 = vec3(50.0f + 2.0f * g_Ship->ship.Length, 0.0f, 4.0f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, green1, scale, vec3(0.4f, 1.0f, 0.5f));
+    g_StaticBall->Render(g_Camera, green1, scale, vec3(0.4f, 1.0f, 0.5f));
     // 270° (0.5 L bottom point)
     vec3 green2 = vec3(50.0f + 0.5f * g_Ship->ship.Length, 0.0f, 2.5f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, green2, scale, vec3(0.4f, 1.0f, 0.5f));
+    g_StaticBall->Render(g_Camera, green2, scale, vec3(0.4f, 1.0f, 0.5f));
     // 360° (1 L width)
     vec3 green3 = vec3(50.0f + 2.0f * g_Ship->ship.Length, 0.0f, 1.0f * g_Ship->ship.Length);
-    g_FloatingBall->Render(g_Camera, green3, scale, vec3(0.4f, 1.0f, 0.5f));
+    g_StaticBall->Render(g_Camera, green3, scale, vec3(0.4f, 1.0f, 0.5f));
 
     // Stopping ability
     vec3 red4 = vec3(50.0f + 15.0f * g_Ship->ship.Length, 0.0f, 0.0f);
-    g_FloatingBall->Render(g_Camera, red4, scale, vec3(1.0f, 0.4f, 0.5f));
+    g_StaticBall->Render(g_Camera, red4, scale, vec3(1.0f, 0.4f, 0.5f));
 }
 void RenderCentralGridColored()
 {
@@ -1984,17 +2105,16 @@ void RenderOcean()
     if (!g_bWireframe && g_bOceanWireframe) 
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     
-    float waveLength = glm::two_pi<float>() * g_Ship->Velocity * g_Ship->Velocity / 9.81f;  // length between 2 crests
+    float waveLength = glm::two_pi<float>() * g_Ship->SOG * g_Ship->SOG / 9.81f;  // length between 2 crests
     float kelvinScale = 101.0f / waveLength;                // the texture is 1024 and there are 9 wavelengths in 910 pixels
-    //float kelvinScale = 50.37f / waveLength;                // the texture is 1024 and there are 19 wavelengths in 957 pixels
     g_Ocean->Render(g_TimeSpeed * g_TimerShipMotion.getTime(), 
         g_Camera, 
         g_Ship->ship.Position, 
         g_Ship->Yaw, 
-        g_Ship->bKelvinWakes, 
+        g_Ship->bKelvinWakes && (g_Ship->SOG > 0.0f),
         g_Ship->LWL, 
         kelvinScale, 
-        g_Ship->Velocity, 
+        g_Ship->SOG, 
         g_Ship->ship.CenterFore, 
         g_Ship->ship.BaseFroude);
 
@@ -2012,13 +2132,13 @@ void RenderShip()
     if (g_Ship)
         g_Ship->Render(g_Camera, g_Sky.get());
 }
-void RenderTerrains(int t)
+void RenderTerrain()
 {
-    if (!g_bShowTerrain)
+    if (!g_bShowTerrain || g_vTerrains.size() == 0)
         return;
 
     // Terrain
-    g_ShaderSun->use();
+    g_ShaderSun->use(); // Misc/sun.vert, Misc/sun.frag
     g_ShaderSun->setVec3("light.position", g_Sky->SunPosition);
     g_ShaderSun->setVec3("light.ambient", g_Sky->SunAmbient);
     g_ShaderSun->setVec3("light.diffuse", g_Sky->SunDiffuse);
@@ -2044,9 +2164,18 @@ void RenderTerrains(int t)
     {
         mat4 model = glm::translate(mat4(1.0f), g_vTerrains[g_idxHouat].pos);    // The 2 objects are linked to Houat island
         g_ShaderSun->setMat4("model", model);
-        if (g_Pier) g_Pier->Render(*g_ShaderSun);
         if (g_Port) g_Port->Render(*g_ShaderSun);
     }
+}
+void RenderTraffic()
+{
+    if (g_Traffics.get())
+        g_Traffics->Render(g_Camera, g_Sky.get());
+}
+void RenderMarks()
+{
+    if (g_Markup.get())
+        g_Markup->Render(g_Camera, g_Ocean.get(), g_Sky.get());
 }
 void RenderArrowWind()
 {
@@ -2057,7 +2186,7 @@ void RenderArrowWind()
         return;
 
     vec3 position = vec3(g_Ship->ship.Position.x, 1.0f, g_Ship->ship.Position.z) + 2.0f * g_Ship->GetLength() * glm::normalize(vec3(g_Wind.x, 0.0f, g_Wind.y));
-    float dir = g_WindDirectionDEG + 180.0f;
+    float dir = g_TWS_Deg + 180.0f;
     dir = fmod(450.0f - dir, 360.0f);
     dir = glm::radians(dir);
 
@@ -2077,6 +2206,63 @@ void RenderArrowWind()
     g_ShaderCamera->setMat4("view", g_Camera.GetView());
     g_ShaderCamera->setMat4("projection", g_Camera.GetProjection());
     g_ArrowWind->Render(*g_ShaderCamera);
+}
+void RenderRainVolumeFullScreen()
+{
+    g_ShaderRainVolume->use();
+    g_ShaderRainVolume->setMat4("matViewProj", g_Camera.GetViewProjection());
+    g_ShaderRainVolume->setMat4("matInvViewProj", glm::inverse(g_Camera.GetViewProjection()));
+
+    // ✅ CORRIGÉ : FBO TEMPORAIRE (océan SEUL)
+    g_ShaderRainVolume->setSampler2D("sceneColor", TexOceanTempColor, 0);
+    g_ShaderRainVolume->setSampler2D("sceneDepth", TexOceanTempDepth, 1);
+
+    // Paramètres pluie INCHANGÉS
+    g_ShaderRainVolume->setFloat("uTime", g_TimerShipMotion.getTime());
+    g_ShaderRainVolume->setVec3("cameraPos", g_Camera.GetPosition());
+    vec3 wind3D(g_Wind.x, 0.0f, g_Wind.y);
+    g_ShaderRainVolume->setVec3("windDir", wind3D);
+    g_ShaderRainVolume->setVec2("screenSize", vec2(g_WindowW, g_WindowH));
+    g_ShaderRainVolume->setFloat("rainDensity", 1.0f);
+    g_ShaderRainVolume->setFloat("rainSpeed", 1.0f);
+
+    // RENDRE dans msFBO_SCENE (accumulation)
+    g_ScreenQuadRainVolume->Render();
+}
+void RenderRain(bool bInside)
+{
+    // EXTÉRIEUR : Pluie partout (pas de stencil)
+    if (!bInside)
+    {
+        RenderRainVolumeFullScreen();
+        return;
+    }
+
+    // INTÉRIEUR : Pluie SEULEMENT par vitres (STENCIL)
+    glEnable(GL_STENCIL_TEST);
+
+    // Pass 1 : MARQUER vitres (stencil=1)
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glStencilMask(0xFF);
+    glDepthMask(GL_FALSE);  // Vitres transparentes
+
+    g_Ship->RenderStencilForWindows(g_Camera);
+
+    glDepthMask(GL_TRUE);
+
+    // Pass 2 : PLUIE UNIQUEMENT où stencil=1
+    glStencilFunc(GL_EQUAL, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glStencilMask(0x00);
+    glDepthFunc(GL_ALWAYS);  // Overlay pluie
+
+    RenderRainVolumeFullScreen();
+
+    // RESET STENCIL
+    glStencilFunc(GL_ALWAYS, 0, 0xFF);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_STENCIL_TEST);
 }
 
 // Interface 2D
@@ -2145,6 +2331,8 @@ void RenderImGui()
             ImGui::Checkbox("Night vision", &g_bNightVision);
             ImGui::SameLine();
             ImGui::Checkbox("Low vision", &g_bLowIntensity);
+            ImGui::SameLine();
+            ImGui::Checkbox("Chrono", &g_bChrono);
             // ------------
             if (ImGui::Button(" PAUSE "))
             {
@@ -2197,12 +2385,14 @@ void RenderImGui()
                     ImGui::Checkbox("Axis", &g_Axe->bVisible);
                 }
                 // ------------
-                if (g_FloatingBall)
-                    ImGui::Checkbox("Manoeuvrability", &g_FloatingBall->bVisible);
+                if (g_StaticBall)
+                    ImGui::Checkbox("Manoeuvrability", &g_StaticBall->bVisible);
                 // ------------
                 ImGui::Checkbox("Wind Arrow", &g_ArrowWind->bVisible);
                 ImGui::SameLine();
                 ImGui::Checkbox("Seagull", &g_bSoundSeagull);
+                ImGui::SameLine();
+                ImGui::Checkbox("Traffic", &g_Traffics->bShowRoute);
                 // ------------
                 ImGui::Checkbox("Wireframe##1", &g_bWireframe);
                 ImGui::SameLine();
@@ -2246,18 +2436,18 @@ void RenderImGui()
                 ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));     // Lighter background on hover
                 ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));      // Even brighter background when active
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));               // White text
-                if (ImGui::SliderFloat("Direction", &g_WindDirectionDEG, 0.0f, 360.0f, "%.f°"))
+                if (ImGui::SliderFloat("Direction", &g_TWS_Deg, 0.0f, 360.0f, "%.f°"))
                 {
-                    g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
+                    g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
                     g_Ocean->GetWind(g_Wind);
                     g_Ocean->InitFrequencies();
                 }
-                if (ImGui::SliderFloat("Speed##1", &g_WindSpeedKN, 1.0f, 30.0f, "%0.0f kn"))
+                if (ImGui::SliderFloat("Speed##1", &g_TWS_Kn, 1.0f, 30.0f, "%0.0f kn"))
                 {
-                    g_Wind = WindDirSpeed_Vec(g_WindDirectionDEG, g_WindSpeedKN);
+                    g_Wind = wind_from_speeddir(g_TWS_Deg, g_TWS_Kn);
                     g_Ocean->GetWind(g_Wind);
                     g_Ocean->InitFrequencies();
-                    g_Clouds->SetCloudSpeed(g_WindSpeedKN);
+                    g_Clouds->SetCloudSpeed(g_TWS_Kn);
                 }
                 ImGui::PopStyleColor(6);                                                            // For the 6 PushStyleColor above
             }
@@ -2271,7 +2461,8 @@ void RenderImGui()
                     if (ImGui::SliderFloat("Foam", &g_Ocean->PersistenceSec, 0.0f, 5.0f, "%0.1f s")) g_Ocean->EvaluatePersistence(g_Ocean->PersistenceSec);
                     ImGui::SliderFloat("Transparency", &g_Ocean->Transparency, 0.0f, 1.0f, "%0.2f");
                     // Colors
-                    if (ImGui::SliderInt("# Color", &g_Ocean->iOceanColor, 0, g_Ocean->vOceanColors.size() - 1)) g_Ocean->OceanColor = ConvertToFloat(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
+                    if (ImGui::SliderInt("# Color", &g_Ocean->iOceanColor, 0, g_Ocean->vOceanColors.size() - 1)) 
+                        g_Ocean->OceanColor = color_255_to_1(g_Ocean->vOceanColors[g_Ocean->iOceanColor]);
                     ImGui::ColorEdit3("Ocean", (float*)&g_Ocean->OceanColor[0], 0);
                     // Heights
                     static float waves1_3 = 0.0f;
@@ -2282,7 +2473,7 @@ void RenderImGui()
                     ImGui::Text("Height 1/3  : %.1f m (%.1f s) (%d waves)", waves1_3, average_period, nWaves);
 
                     double fetch = 50000.0; // 50 km en mètres
-                    auto waveParams = JONSWAPModel::GetWaveParameters(KnotsToMS(g_WindSpeedKN), fetch);
+                    auto waveParams = JONSWAPModel::GetWaveParameters(knot_to_ms(g_TWS_Kn), fetch);
                     ImGui::Text("JONSWAP 1/3 : %.1f m (%.1f s)", waveParams.significantWaveHeight, waveParams.peakPeriod);
                     ImGui::Checkbox("Analyse spectrale", &g_bShowOceanAnalysisWindow);
                     static double lastUpdateTime = 0.0;
@@ -2493,6 +2684,7 @@ void RenderImGui()
                     g_Ship->bOutline = true;
                     g_Ship->bSmoke = false;
                     g_Ship->bLights = false;
+                    g_Traffics->bLights = g_Ship->bLights;
                 }
             }
             // ------------
@@ -2501,13 +2693,9 @@ void RenderImGui()
             ImGui::Checkbox("Contours D", &g_Ship->bContour);
             ImGui::SameLine();
             ImGui::Checkbox("BBox", &g_Ship->BBoxShape->bVisible);
-            // ------------
-            ImGui::Checkbox("Chrono", &g_bChrono);
 
             /////////////////////////////////
             ImGui::SeparatorText("AUTOPILOT");
-            ImGui::Checkbox("Dynamic", &g_Ship->bDynamicAdjustment);
-            ImGui::SameLine();
             if (ImGui::Button("SETTINGS"))
                 g_bShowAutopilotWindow = !g_bShowAutopilotWindow;
 
@@ -2690,11 +2878,6 @@ void RenderImGui()
             ImGui::SliderFloat("I", &g_Ship->ship.BaseI, 0.0f, 20.0f, "%.1f");
             ImGui::SliderFloat("D", &g_Ship->ship.BaseD, 0.0f, 20.0f, "%.1f");
             ImGui::SliderFloat("MaxIntegral", &g_Ship->ship.MaxIntegral, 0.0f, 20.0f, "%.1f");
-            ImGui::SliderFloat("MinSpeed", &g_Ship->ship.MinSpeed, 0.0f, 20.0f, "%.1f");
-            ImGui::SliderFloat("LowSpeedBoost", &g_Ship->ship.LowSpeedBoost, 0.0f, 20.0f, "%.1f");
-            ImGui::SliderFloat("HighSpeedLimit", &g_Ship->ship.HighSpeedLimit, 0.0f, 20.0f, "%.1f");
-            ImGui::SliderFloat("DynamicFactor", &g_Ship->ship.DynamicFactor, 0.0f, 20.0f, "%.1f");
-            ImGui::SliderFloat("SeaSateFactor", &g_Ship->ship.SeaSateFactor, 0.0f, 20.0f, "%.1f");
         }
         ImGui::End();
         ImGui::PopStyleColor();
@@ -2708,7 +2891,7 @@ void RenderStatusbar()
     char text[256];
     vec3 position = g_Camera.GetPosition();
     float distCameraShip = glm::length(g_Ship->ship.Position - position);
-    vec2 lonlat = OpenGLToLonLat(position.x, position.z);
+    vec2 lonlat = opengl_to_lonlat(position.x, position.z);
     sprintf_s(text, "CAMERA x = %.2f y = %.2f z = %.2f Heading = %03d° Roll = %d° Pitch = %d       Distance to ship = %d m      Lon = %.6f Lat =  %.6f", 
         position.x, position.y, position.z, 
         (int)g_Camera.GetNorthAngleDEG(), (int)g_Camera.GetAttitudeDEG(), (int)g_Camera.GetRollDEG(), 
@@ -2791,7 +2974,7 @@ void RenderTitle(float x, float y, float size, int align)
     nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
     nvgFontSize(g_Nvg, size);
     nvgFontFace(g_Nvg, "caveat");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgTextAlign(g_Nvg, align);
 
     float bounds[4];
     const char* text = "SimShip";
@@ -2873,128 +3056,130 @@ void RenderTextures()
 }
 
 // Dashboard 2D of the ship
-void RenderIcon(float x, float y)
+void DrawIcon(int image, float x, float y)
 {
-    // Load the image with stbi
-    int wi, hi, n, image;
-    unsigned char* img;
-    stbi_set_unpremultiply_on_load(1);
-    stbi_convert_iphone_png_to_rgb(1);
-    img = stbi_load("Resources/no_sound.png", &wi, &hi, &n, 4);
-    if (img == NULL)
-    {
-        // printf("Failed to load %s - %s\n", filename, stbi_failure_reason());
-        return;
-    }
-    image = nvgCreateImageRGBA(g_Nvg, wi, hi, 0, img);
-    stbi_image_free(img);
-
+    int wi, hi;
     nvgImageSize(g_Nvg, image, &wi, &hi);
 
     nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x + 3, y + 3, wi, hi, 10);
-    NVGpaint imgPaint = nvgImagePattern(g_Nvg, x + 3, y + 3, wi, hi, 0, image, 1.0f);
+    nvgRoundedRect(g_Nvg, x, y, wi, hi, 5);
+    nvgFillColor(g_Nvg, g_ColorSimShip3);
+    nvgFill(g_Nvg);
+
+    nvgBeginPath(g_Nvg);
+    nvgRect(g_Nvg, x, y, wi, hi);
+    NVGpaint imgPaint = nvgImagePattern(g_Nvg, x, y, wi, hi, 0, image, 1.0f);
     nvgFillPaint(g_Nvg, imgPaint);
     nvgFill(g_Nvg);
 }
-void RenderEnv(float x, float y)
+void DrawCircle(float x, float y, float diameter, NVGcolor fill, const char* label, float fontsize, NVGcolor text)
 {
-    float w = 80.0f;
-    float h = 136.0f;
-    float buttonWidth = w * 0.9f;
-    float buttonHeight = h * 0.2f;
-    float gap = 5.0f;
+    float r = diameter * 0.5f;
+    float cx = x + r;
+    float cy = y + r;
 
-    // Rounded rectangle
+    nvgBeginPath(g_Nvg);
+    nvgCircle(g_Nvg, cx, cy, r);
+    nvgFillColor(g_Nvg, fill);
+    nvgFill(g_Nvg);
+    
+    nvgFillColor(g_Nvg, text);
+    nvgFontSize(g_Nvg, fontsize);
+    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(g_Nvg, cx, cy, label, nullptr);
+};
+void DrawRoundRect(float x, float y, float w, float h, NVGcolor fill, const char* label, float fontsize, NVGcolor text)
+{
+    nvgBeginPath(g_Nvg);
+    nvgRoundedRect(g_Nvg, x, y, w, h, 5.0f);
+    nvgFillColor(g_Nvg, fill);
+    nvgFill(g_Nvg);
+    
+    nvgFillColor(g_Nvg, text);
+    nvgFontSize(g_Nvg, fontsize);
+    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(g_Nvg, x + w / 2, y + h / 2 + 0.5f, label, nullptr);
+}
+void DrawRoundFrame(float x, float y, float w, float h, NVGcolor fill)
+{
     nvgBeginPath(g_Nvg);
     nvgRoundedRect(g_Nvg, x, y, w, h, 10);
-    nvgFillColor(g_Nvg, nvgRGBA(192, 192, 192, 255));
+    nvgFillColor(g_Nvg, fill);
     nvgFill(g_Nvg);
-    nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+    nvgStrokeColor(g_Nvg, g_ColorWhite);
     nvgStrokeWidth(g_Nvg, 2.0f);
     nvgStroke(g_Nvg);
+}
+
+void RenderEnv(float x, float y)
+{
+    float w = 80;
+    float h = 136;
+    float buttonWidth = 72;
+    float buttonHeight = 28;
+    float gap = 5;
+
+    // Rounded rectangle
+    DrawRoundFrame(x, y, w, h, g_ColorSimShip4);
 
     // Camera mode button
     float currentY = y + 5;
-    nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x + (w - buttonWidth) / 2, currentY, buttonWidth, buttonHeight, 5);
-    NVGcolor color = nvgRGBA(1, 121, 158, 255);
+    NVGcolor color;
     switch (g_Camera.GetMode())
     {
-    case eCameraMode::ORBITAL:  color = nvgRGBA(0, 0, 160, 255);  break;
-    case eCameraMode::BRIDGE:   color = nvgRGBA(160, 0, 0, 255);  break;
-    case eCameraMode::FPS:      color = nvgRGBA(0, 160, 0, 255); break;
+    case eCameraMode::ORBITAL:  color = g_ColorAmbre;  break;
+    case eCameraMode::BRIDGE:   color = g_ColorRed;  break;
+    case eCameraMode::FPS:      color = g_ColorGreen; break;
     }
-    nvgFillColor(g_Nvg, color);
-    nvgFill(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgFontSize(g_Nvg, 18.0f);
-    nvgFontFace(g_Nvg, "arial");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     string mode;
     switch (g_Camera.GetMode())
     {
-    case eCameraMode::ORBITAL:  mode = "orbital"; break;
+    case eCameraMode::ORBITAL:  mode = "ORBITAL"; break;
     case eCameraMode::BRIDGE:
         switch (g_eBridgeView)
         {
-        case eBridgeView::WHEEL:    mode = "bridge"; break;
-        case eBridgeView::LEFT:     mode = "left"; break;
-        case eBridgeView::RIGHT:    mode = "right"; break;
-        case eBridgeView::BOW:      mode = "bow"; break;
-        case eBridgeView::STERN:    mode = "rstern"; break;
+        case eBridgeView::WHEEL:    mode = "BRIDGE"; break;
+        case eBridgeView::LEFT:     mode = "LEFT"; break;
+        case eBridgeView::RIGHT:    mode = "RIGHT"; break;
+        case eBridgeView::BOW:      mode = "BOW"; break;
+        case eBridgeView::STERN:    mode = "STERN"; break;
         }
         break;
-    case eCameraMode::FPS:      mode = "fps"; break;
+    case eCameraMode::FPS:      mode = "FPS"; break;
     }
-    nvgText(g_Nvg, x + w / 2, currentY + buttonHeight / 2, mode.c_str(), nullptr);
+    nvgFontFace(g_Nvg, "arial");
+    DrawRoundRect(x + (w - buttonWidth) / 2, currentY, buttonWidth, buttonHeight, color, mode.c_str(), 16.0f, g_ColorWhite);
 
     // Lookat angle
-    float fpsFontSize = 16.0f;
-    nvgFillColor(g_Nvg, color);
-    nvgFontSize(g_Nvg, fpsFontSize);
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    buttonWidth = 60;
+    buttonHeight = 18;
     char lookat[16];
     snprintf(lookat, sizeof(lookat), "%03d°", (int)g_Camera.GetNorthAngleDEG());
-    currentY += buttonHeight + 2.0f * gap + 2.0f;
-    nvgText(g_Nvg, x + w / 2, currentY, lookat, nullptr);
-
-    currentY += gap + 4.0f;
-    
-    // Time
-    sHM hm = g_Sky->GetTime();
-    char buffer[12];
-    snprintf(buffer, sizeof(buffer), "%02d:%02d", hm.hour, hm.minute);
-    nvgFillColor(g_Nvg, nvgRGBA(32, 32, 32, 255));
-    nvgFontSize(g_Nvg, 22.0f);
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgText(g_Nvg, x + w / 2, currentY + buttonHeight / 2, buffer, nullptr);
-
-    g_CtrlTimeHour = vec4(x + 10, currentY, 30, 22);
-    g_CtrlTimeMinute = vec4(x + 40, currentY, 30, 22);
-
-    float nowButtonHeight = buttonHeight * 0.75f;
-    currentY += buttonHeight + gap - 5.0f;
-
-    // Now button
-    nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x + (w - buttonWidth * 0.7f) / 2, currentY, buttonWidth * 0.7f, nowButtonHeight, 5);
-    nvgFillColor(g_Nvg, nvgRGBA(150, 150, 150, 255));
-    nvgFill(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgFontSize(g_Nvg, 12.0f);
-    nvgText(g_Nvg, x + w / 2, currentY + nowButtonHeight / 2, "NOW", nullptr);
-    g_CtrlNow = vec4(x + (w - buttonWidth * 0.7f) / 2, currentY, buttonWidth * 0.7f, nowButtonHeight);
-
-    currentY += nowButtonHeight + 18.0f;
+    DrawRoundRect(x + (w - buttonWidth) / 2, y + 38, buttonWidth, buttonHeight, g_ColorSimShip1, lookat, 16.0f, g_ColorCyan);
     
     // Fps
-    nvgFillColor(g_Nvg, nvgRGBA(32, 32, 32, 255));
-    nvgFontSize(g_Nvg, 16.0f);
-    nvgFontFace(g_Nvg, "arial");
-    char fpsTxt[16];
-    snprintf(fpsTxt, sizeof(fpsTxt), "%d i/s", g_Fps);
-    nvgText(g_Nvg, x + w / 2, currentY, fpsTxt, nullptr);
+    char fps[16];
+    snprintf(fps, sizeof(fps), "%d i/s", g_Fps);
+    DrawRoundRect(x + (w - buttonWidth) / 2, y + 61, buttonWidth, buttonHeight, g_ColorSimShip1, fps, 16.0f, g_ColorCyan);
+
+    // Icon Sound
+    if (g_SoundMgr->bSound) DrawIcon(g_NvgImgSoundUp, x + 15, 88);
+    else                    DrawIcon(g_NvgImgSoundOff, x + 15, 88);
+    g_CtrlSound = vec4(x + 15, 88, 20.0f, 20.0f);
+    
+    // Icon Timer
+    DrawIcon(g_NvgImgTimer, x + 45, 88);
+    g_CtrlTimer = vec4(x + 45, 88, 20.0f, 20.0f);
+
+    // Icons Meteo
+    DrawIcon(g_NvgImgMto1, x + 5, 112);
+    g_CtrlMto1 = vec4(x + 5, 112, 20.0f, 20.0f);
+
+    DrawIcon(g_NvgImgMto2, x + 30, 112);
+    g_CtrlMto2 = vec4(x + 30, 112, 20.0f, 20.0f);
+
+    DrawIcon(g_NvgImgMto3, x + 55, 112);
+    g_CtrlMto3 = vec4(x + 55, 112, 20.0f, 20.0f);
 
     // Night overlay
     if (g_Sky->SunPosition.y < 0.0f)
@@ -3010,7 +3195,7 @@ void RenderControlFrame(float x, float y, float w, float h)
     // Draw the rectangle
     nvgBeginPath(g_Nvg);
     nvgRoundedRect(g_Nvg, x, y, w, h, 10);
-    nvgFillColor(g_Nvg, nvgRGBA(192, 192, 192, 255));
+    nvgFillColor(g_Nvg, g_ColorSimShip4);
     nvgFill(g_Nvg);
     nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
     nvgStrokeWidth(g_Nvg, 2.0f);
@@ -3023,7 +3208,7 @@ void RenderControlFrame(float x, float y, float w, float h)
     nvgFontSize(g_Nvg, 8.0f);
     nvgText(g_Nvg, x + 5, y + 5, "TWS (kn)", nullptr);
     char windText[32];
-    snprintf(windText, sizeof(windText), "%.0f", g_WindSpeedKN);
+    snprintf(windText, sizeof(windText), "%.0f", g_TWS_Kn);
     nvgFontSize(g_Nvg, 20.0f);
     nvgText(g_Nvg, x + 5, y + 15, windText, nullptr);
 
@@ -3034,7 +3219,7 @@ void RenderControlFrame(float x, float y, float w, float h)
     nvgTextAlign(g_Nvg, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
     nvgFontSize(g_Nvg, 8.0f);
     nvgText(g_Nvg, x + 5, y + h - 25, "AWS (kn)", nullptr);
-    snprintf(windText, sizeof(windText), "%.1f", MsToKnots(g_Ship->WindApparent));
+    snprintf(windText, sizeof(windText), "%.1f", ms_to_knot(g_Ship->AWS));
     nvgFontSize(g_Nvg, 20.0f);
     nvgText(g_Nvg, x + 5, y + h - 3, windText, nullptr);
 }
@@ -3052,11 +3237,11 @@ void RenderCompass(float x, float y, float radius)
 
     nvgBeginPath(g_Nvg);
     nvgCircle(g_Nvg, x, y, radius);
-    nvgFillColor(g_Nvg, nvgRGBA(53, 73, 100, 255));
+    nvgFillColor(g_Nvg, g_ColorSimShip1);
     nvgFill(g_Nvg);
-    nvgStrokeColor(g_Nvg, nvgRGBA(53, 73, 100, 255));
-    nvgStrokeWidth(g_Nvg, thicknessCircle);
-    nvgStroke(g_Nvg);
+    //nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+    //nvgStrokeWidth(g_Nvg, thicknessCircle);
+    //nvgStroke(g_Nvg);
 
     // Graduations and cardinal points
     for (int i = 0; i < 360; i += 10)
@@ -3091,12 +3276,12 @@ void RenderCompass(float x, float y, float radius)
         x + cosf(angleTriangle) * (radius - heightTriangle) + sinf(angleTriangle) * (baseTriangle / 2),
         y + sinf(angleTriangle) * (radius - heightTriangle) - cosf(angleTriangle) * (baseTriangle / 2));
     nvgClosePath(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(0, 200, 200, 255));
+    nvgFillColor(g_Nvg, g_ColorCyan);
     nvgFill(g_Nvg);
 
     // HDG display 
     nvgFontFace(g_Nvg, "arial");
-    nvgFillColor(g_Nvg, nvgRGBA(0, 200, 200, 255));
+    nvgFillColor(g_Nvg, g_ColorCyan);
     nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     char strHDG[4];
     strcpy(strHDG, "HDG");
@@ -3123,12 +3308,12 @@ void RenderCompass(float x, float y, float radius)
         x + cosf(angleTriangle) * (radius - heightTriangle) + sinf(angleTriangle) * (baseTriangle / 2),
         y + sinf(angleTriangle) * (radius - heightTriangle) - cosf(angleTriangle) * (baseTriangle / 2));
     nvgClosePath(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(200, 200, 0, 255));
+    nvgFillColor(g_Nvg, g_ColorYellow);
     nvgFill(g_Nvg);
 
     // COG display
     nvgFontFace(g_Nvg, "arial");
-    nvgFillColor(g_Nvg, nvgRGBA(200, 200, 0, 255));
+    nvgFillColor(g_Nvg, g_ColorYellow);
     nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     char strCOG[4];
     strcpy(strCOG, "COG");
@@ -3144,13 +3329,13 @@ void RenderCompass(float x, float y, float radius)
     snprintf(capStrDrift, sizeof(capStrDrift), "Drift: %.1f°", g_Ship->DriftAngleDeg);
     nvgFontSize(g_Nvg, sizeTexDisplay * 1.6f);
     nvgFontFace(g_Nvg, "arial");
-    nvgFillColor(g_Nvg, nvgRGBA(255, 165, 0, 255));
+    nvgFillColor(g_Nvg, g_ColorAmbre);
     nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgText(g_Nvg, x, y + 2.0f * spacing - 5.0f, capStrDrift, NULL);
 
     // Wind marker ==========================
     
-    float angleWind = (g_WindDirectionDEG - 90.0f) * NVG_PI / 180.0f;
+    float angleWind = (g_TWS_Deg - 90.0f) * NVG_PI / 180.0f;
     float triangleHauteur = 10.8f;
     float triangleBase = 9.35f;
     // Point slightly tucked into the circle
@@ -3176,7 +3361,7 @@ void RenderCompass(float x, float y, float radius)
     // Second base corner (right)
     nvgLineTo(g_Nvg, rightBaseX, rightBaseY);
     nvgClosePath(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(255, 0, 0, 255));
+    nvgFillColor(g_Nvg, g_ColorRed);
     nvgFill(g_Nvg);
 
     // HDG instruction marker ========================
@@ -3223,12 +3408,12 @@ void RenderCompass(float x, float y, float radius)
     nvgLineTo(g_Nvg, x3, y3);
     nvgLineTo(g_Nvg, x4, y4);
     nvgClosePath(g_Nvg);
-    nvgFillColor(g_Nvg, g_Ship->bAutopilot ? nvgRGBA(0, 200, 0, 255) : nvgRGBA(200, 0, 0, 255));
+    nvgFillColor(g_Nvg, g_Ship->bAutopilot ? g_ColorGreen : g_ColorRed);
     nvgFill(g_Nvg);
 
     // Drawing of the two white side borders
     nvgStrokeWidth(g_Nvg, 1.0f);
-    nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255)); // white
+    nvgStrokeColor(g_Nvg, g_ColorWhite);
 
     // Left side border (line between x1-y1 and x4-y4)
     nvgBeginPath(g_Nvg);
@@ -3566,7 +3751,7 @@ void RenderThrottle(float x, float y, float w, float h, float e)
     // Speed
     static char text[50];
     if (bUpdate)
-        sprintf_s(text, "%.2f kt", fabs(g_Ship->SOG));
+        sprintf_s(text, "%.2f kt", fabs(ms_to_knot(g_Ship->SOG)));
     nvgFontSize(g_Nvg, 16.0f);
     nvgFontFace(g_Nvg, "arial");
     nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -3602,7 +3787,7 @@ void RenderThrottle(float x, float y, float w, float h, float e)
     {
         static char text[50];
         if (bUpdate)
-            sprintf_s(text, "%.1f kt", fabs(g_Ship->SOGbow));
+            sprintf_s(text, "%.1f kt", fabs(ms_to_knot(g_Ship->SOGbow)));
         nvgFontSize(g_Nvg, 12.0f);
         nvgFontFace(g_Nvg, "arial");
         nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -3647,7 +3832,7 @@ void RenderThrottle(float x, float y, float w, float h, float e)
     {
         static char text[50];
         if (bUpdate)
-            sprintf_s(text, "%.1f kt", fabs(g_Ship->SOGstern));
+            sprintf_s(text, "%.1f kt", fabs(ms_to_knot(g_Ship->SOGstern)));
         nvgFontSize(g_Nvg, 12.0f);
         nvgFontFace(g_Nvg, "arial");
         nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -3883,109 +4068,108 @@ void RenderSternThruster(float x, float y, float w, float h)
     nvgFill(g_Nvg);
 
 }
-void RenderPitchRoll(float x, float y, float w, float h)
+void RenderTime(float x, float y, float w, float h)
 {
-    // Draw the lower half of the square (blue)
-    nvgBeginPath(g_Nvg);
-    nvgRect(g_Nvg, x, y + h / 2, w, h / 2);
-    nvgFillColor(g_Nvg, nvgRGBA(53, 73, 100, 255));
-    nvgFill(g_Nvg);
-
-    // Draw the top half of the square (very light blue)
-    nvgBeginPath(g_Nvg);
-    nvgRect(g_Nvg, x, y, w, h / 2);
-    nvgFillColor(g_Nvg, nvgRGBA(73, 93, 120, 255));
-    nvgFill(g_Nvg);
-
-    char text[50];
-    sprintf_s(text, "Pitch  %.1f°", glm::degrees(g_Ship->Pitch));
-    nvgFontSize(g_Nvg, 12.0f);
+    sHM hm = g_Sky->GetTime();
+    char buffer[12];
+    int hr = hm.hour + hm.timezoneOffsetHours;
+    if (hr > 23)
+        hr -= 24;
+    snprintf(buffer, sizeof(buffer), "%02d:%02d", hr, hm.minute);
+    nvgFillColor(g_Nvg, nvgRGBA(0, 0, 0, 255));
+    nvgFontSize(g_Nvg, 22.0f);
     nvgFontFace(g_Nvg, "arial");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgText(g_Nvg, x + w / 2, y + h / 6, text, NULL);
+    nvgTextAlign(g_Nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(g_Nvg, x, y - 2, buffer, nullptr);
+    g_CtrlTimeHour = vec4(x, y - 2, 23, 20);
+    g_CtrlTimeMinute = vec4(x + 23, y - 2, 23, 20);
 
-    sprintf_s(text, "Roll  %.1f°", glm::degrees(g_Ship->Roll));
-    nvgFontSize(g_Nvg, 12.0f);
-    nvgFontFace(g_Nvg, "arial");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgText(g_Nvg, x + w / 2, y + 5 * h / 6, text, NULL);
-
-    // Calculate the position of the circle based on the pitch
-    float centreY = y + h / 2 - g_Ship->Pitch * h / 2;
-    float rayon = w / 10;
-    // Calculate the top and bottom limits so that the circle remains within the rectangle
-    float minCentreY = y + rayon;
-    float maxCentreY = y + h - rayon;
-    // Clamp to keep center Y inside the frame
-    if (centreY < minCentreY)
-        centreY = minCentreY;
-    else if (centreY > maxCentreY)
-        centreY = maxCentreY;
-    
-    // Draw the small, non-filled circle (very light gray)
-    nvgBeginPath(g_Nvg);
-    nvgCircle(g_Nvg, x + w / 2, centreY, rayon);
-    nvgStrokeColor(g_Nvg, nvgRGBA(220, 220, 220, 255));
-    nvgStrokeWidth(g_Nvg, 1.0f);
-    nvgStroke(g_Nvg);
-
-    // Draw the slanted lines
-    float angleRad = g_Ship->Roll;
-    float traitLongueur = w / 2;
-
-    nvgSave(g_Nvg);
-    nvgTranslate(g_Nvg, x + w / 2, centreY);
-    nvgRotate(g_Nvg, angleRad);
-
-    nvgBeginPath(g_Nvg);
-    nvgMoveTo(g_Nvg, -rayon, 0);
-    nvgLineTo(g_Nvg, -traitLongueur, 0);
-    nvgMoveTo(g_Nvg, rayon, 0);
-    nvgLineTo(g_Nvg, traitLongueur, 0);
-    nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgStrokeWidth(g_Nvg, 1.0f);
-    nvgStroke(g_Nvg);
-
-    nvgRestore(g_Nvg);
+    DrawIcon(g_NvgImgClock, x + w - 25, y - 3);
+    g_CtrlNow = vec4(x + w - 25, y - 3, 20.0f, 20.0f);
 }
-void RenderRoT(float x, float y, float w, float h)
+void RenderPitchRollRot(float x, float y, float w, float h)
 {
-    // Draw the square (light blue)
+    // Black frame
     nvgBeginPath(g_Nvg);
-    nvgRect(g_Nvg, x, y, w, h);
-    nvgFillColor(g_Nvg, nvgRGBA(53, 73, 100, 255));
+    nvgRoundedRect(g_Nvg, x, y, w, h, 5);
+    nvgFillColor(g_Nvg, g_ColorSimShip1);
     nvgFill(g_Nvg);
 
-    char text1[50];
-    sprintf_s(text1, "%.0f°/mn", -g_Ship->YawVelocity * (180.0f / M_PI) * 60.0f);
-  
-    char text2[50];
-    char text3[50];
-    if (g_Ship->TurnDiameter_L < 20.0f)
-    {
-        sprintf_s(text2, "%.0f m", g_Ship->TurnDiameter_m);
-        sprintf_s(text3, "%.1f L", g_Ship->TurnDiameter_L);
-    }
-    else
-    {
-        sprintf_s(text2, "> %.0f m", 20.0f * g_Ship->ship.Length);
-        sprintf_s(text3, "> 20 L");
-    }
+    float sizeTitle = 8.0f;
+    float sizeValue = 12.0f;
 
-    nvgFontSize(g_Nvg, 12.0f);
+    // List of values
     nvgFontFace(g_Nvg, "arial");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgFillColor(g_Nvg, nvgRGBA(0, 200, 200, 255));
+    nvgTextAlign(g_Nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    char text[50];
+    float x1 = x + 40;
 
-    float lineSpacing = 14.0f;
-    float yCenter = y + h / 2;
+    // Pitch
+    float y1 = y + 12;
+    strcpy_s(text, "PITCH");
+    nvgFontSize(g_Nvg, sizeTitle);
+    nvgFillColor(g_Nvg, g_ColorWhite);
+    nvgText(g_Nvg, x + 5, y1, text, NULL);
 
-    nvgText(g_Nvg, x + w / 2, yCenter - lineSpacing, text1, NULL);
-    nvgFillColor(g_Nvg, nvgRGBA(200, 200, 0, 255));
-    nvgText(g_Nvg, x + w / 2, yCenter, text2, NULL);
-    nvgText(g_Nvg, x + w / 2, yCenter + lineSpacing, text3, NULL);
+    nvgFontSize(g_Nvg, sizeValue);
+    sprintf_s(text, "%.1f°", glm::degrees(g_Ship->Pitch));
+    nvgFillColor(g_Nvg, g_ColorCyan);
+    nvgText(g_Nvg, x1, y1, text, NULL);
+
+    // Roll
+    y1 += sizeValue + 6;
+    strcpy_s(text, "ROLL");
+    nvgFontSize(g_Nvg, sizeTitle);
+    nvgFillColor(g_Nvg, g_ColorWhite);
+    nvgText(g_Nvg, x + 5, y1, text, NULL);
+
+    nvgFontSize(g_Nvg, sizeValue);
+    sprintf_s(text, "%.1f°", glm::degrees(g_Ship->Roll));
+    nvgFillColor(g_Nvg, g_ColorCyan);
+    nvgText(g_Nvg, x1, y1, text, NULL);
+
+    // Rate of turn
+    y1 += sizeValue + 6;
+    strcpy_s(text, "ROT");
+    nvgFontSize(g_Nvg, sizeTitle);
+    nvgFillColor(g_Nvg, g_ColorWhite);
+    nvgText(g_Nvg, x + 5, y1, text, NULL);
+
+    nvgFontSize(g_Nvg, sizeValue);
+    sprintf_s(text, "%.0f°/mn", -g_Ship->YawVelocity * (180.0f / M_PI) * 60.0f);
+    nvgFillColor(g_Nvg, g_ColorCyan);
+    nvgText(g_Nvg, x1, y1, text, NULL);
+
+    // Diameter
+    y1 += sizeValue + 6;
+    strcpy_s(text, "DIAM");
+    nvgFontSize(g_Nvg, sizeTitle);
+    nvgFillColor(g_Nvg, g_ColorWhite);
+    nvgText(g_Nvg, x + 5, y1, text, NULL);
+
+    nvgFontSize(g_Nvg, sizeValue);
+    nvgFillColor(g_Nvg, g_ColorCyan);
+    if (g_Ship->TurnDiameter_L < 20.0f)
+        sprintf_s(text, "%.0f m", g_Ship->TurnDiameter_m);
+    else
+        sprintf_s(text, "> %.0f m", 20.0f * g_Ship->ship.Length);
+    nvgText(g_Nvg, x1, y1, text, NULL);
+
+    // Radius
+    y1 += sizeValue + 6;
+    strcpy_s(text, "RADIUS");
+    nvgFontSize(g_Nvg, sizeTitle);
+    nvgFillColor(g_Nvg, g_ColorWhite);
+    nvgText(g_Nvg, x + 5, y1, text, NULL);
+
+    nvgFontSize(g_Nvg, sizeValue);
+    nvgFillColor(g_Nvg, g_ColorCyan);
+    if (g_Ship->TurnDiameter_L < 20.0f)
+        sprintf_s(text, "%.1f L", g_Ship->TurnDiameter_L);
+    else
+        sprintf_s(text, "> 20 L");
+    nvgText(g_Nvg, x1, y1, text, NULL);
+
 }
 void RenderRudder(float x, float y, float w, float h)
 {
@@ -4095,141 +4279,40 @@ void RenderAutopilot(float x, float y)
     float h = 136.0f;
     bool isAuto = g_Ship->bAutopilot;
 
-    // Main frame ============================
-
-    nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x, y, w, h, 10);
-    nvgFillColor(g_Nvg, nvgRGBA(192, 192, 192, 255));
-    nvgFill(g_Nvg);
-    nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgStrokeWidth(g_Nvg, 2.0f);
-    nvgStroke(g_Nvg);
+    // Main frame
+    DrawRoundFrame(x, y, w, h, g_ColorSimShip4);
 
     // Auto/Stby button
-    float buttonWidth = w * 0.9f;
-    float buttonHeight = h * 0.2f;
-    nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x + (w - buttonWidth) / 2, y + 5, buttonWidth, buttonHeight, 5);
-    nvgFillColor(g_Nvg, isAuto ? nvgRGBA(0, 200, 0, 255) : nvgRGBA(200, 0, 0, 255));
-    nvgFill(g_Nvg);
-
-    nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-    nvgFontSize(g_Nvg, 18.0f);
-    nvgFontFace(g_Nvg, "arial");
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgText(g_Nvg, x + w / 2, y + 7 + buttonHeight / 2, isAuto ? "AUTO" : "STBY", nullptr);
-
+    float buttonWidth = 72;
+    float buttonHeight = 28;
+    NVGcolor color = isAuto ? g_ColorGreen : g_ColorRed;
+    DrawRoundRect(x + (w - buttonWidth) / 2, y + 5, buttonWidth, buttonHeight, color, isAuto ? "AUTO" : "STBY", 18.0f, g_ColorWhite);
     g_CtrlAutopilotCMD = vec4(x + (w - buttonWidth) / 2, y + 5, buttonWidth, buttonHeight);
 
-    // Course instruction ========================
+    // Course instruction
+    buttonWidth = 60;
+    buttonHeight = 18;
+    char course[10];
+    snprintf(course, sizeof(course), "%03d°", g_Ship->HDGInstruction);
+    DrawRoundRect(x + (w - buttonWidth) / 2, y + 38, buttonWidth, buttonHeight, g_ColorSimShip1, course, 16.0f, g_ColorCyan);
 
-    buttonWidth = w * 0.7f;
-    buttonHeight = h * 0.12f;
-    nvgBeginPath(g_Nvg);
-    nvgRoundedRect(g_Nvg, x + (w - buttonWidth) / 2, y + 35, buttonWidth, buttonHeight, 5);
-    nvgFillColor(g_Nvg, nvgRGBA(100, 100, 100, 255));
-    nvgFill(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(0, 200, 200, 255));
-    nvgStrokeWidth(g_Nvg, 1.0f);
-    nvgFontSize(g_Nvg, 14.0f);
-    nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    char capStr1[10];
-    snprintf(capStr1, sizeof(capStr1), "%03d°", g_Ship->HDGInstruction);
-    nvgText(g_Nvg, x + w / 2, y + 36 + buttonHeight / 2, capStr1, nullptr);
+    // Control buttons
+    float buttonSize = 30;
+    float buttonX1 = x + 7;
+    float buttonX2 = x + 43;
+    float buttonY1 = y + 65;
+    float buttonY2 = y + 100;
 
-    // Control buttons ==============================
-
-    float buttonSize = h * 0.25f;
-    float buttonY1 = y + h * 0.4f;
-    float buttonY2 = y + h * 0.7f;
-    float buttonX1 = x + w * 0.25f - buttonSize / 2;
-    float buttonX2 = x + w * 0.75f - buttonSize / 2;
-
-    // Function to Draw a round button
-    auto drawRoundButton = [&](float bx, float by, const char* label) {
-        nvgBeginPath(g_Nvg);
-        nvgCircle(g_Nvg, bx + buttonSize / 2, by + buttonSize / 2, buttonSize / 2);
-        nvgFillColor(g_Nvg, nvgRGBA(150, 150, 150, 255));
-        nvgFill(g_Nvg);
-        nvgStrokeColor(g_Nvg, nvgRGBA(200, 200, 200, 255));
-        nvgStrokeWidth(g_Nvg, 1.0f);
-        nvgStroke(g_Nvg);
-
-        nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
-        nvgFontSize(g_Nvg, 16.0f);
-        nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgText(g_Nvg, bx + buttonSize / 2, by + buttonSize / 2, label, nullptr);
-        };
-
-    drawRoundButton(buttonX1, buttonY1, "<");
-    drawRoundButton(buttonX2, buttonY1, ">");
-    drawRoundButton(buttonX1, buttonY2, "<<");
-    drawRoundButton(buttonX2, buttonY2, ">>");
+    DrawCircle(buttonX1, buttonY1, buttonSize, g_ColorSimShip3, "<", 16.0f, g_ColorWhite);
+    DrawCircle(buttonX2, buttonY1, buttonSize, g_ColorSimShip3, ">", 16.0f, g_ColorWhite);
+    DrawCircle(buttonX1, buttonY2, buttonSize, g_ColorSimShip3, "<<", 16.0f, g_ColorWhite);
+    DrawCircle(buttonX2, buttonY2, buttonSize, g_ColorSimShip3, ">>", 16.0f, g_ColorWhite);
 
     g_CtrlAutopilotM1 = vec4(buttonX1, buttonY1, buttonSize, buttonSize);
     g_CtrlAutopilotP1 = vec4(buttonX2, buttonY1, buttonSize, buttonSize);
     g_CtrlAutopilotM10 = vec4(buttonX1, buttonY2, buttonSize, buttonSize);
     g_CtrlAutopilotP10 = vec4(buttonX2, buttonY2, buttonSize, buttonSize);
     
-    // Dynamic adjustement =========================
-
-    // Center of the symbol between the buttons
-    float centerX = x + w / 2;
-    float centerY = (buttonY1 + buttonY2 + buttonSize) / 2;
-    float diamondSize = w / 4;
-    float halfSize = diamondSize / 2.0f;
-
-    g_CtrlAutopilotDynAdjust = vec4(centerX - diamondSize, centerY - diamondSize, 2 * diamondSize, 2 * diamondSize);
-
-    // Coordinates of the 4 vertices of the rhombus (top, right, bottom, left)
-    float x0 = centerX;
-    float y0 = centerY - halfSize;     // top
-
-    float x1 = centerX + halfSize;
-    float y1 = centerY;                // right
-
-    float x2 = centerX;
-    float y2 = centerY + halfSize;     // bottom
-
-    float x3 = centerX - halfSize;
-    float y3 = centerY;                // left
-
-    // Light gray filled diamond
-    nvgBeginPath(g_Nvg);
-    nvgMoveTo(g_Nvg, x0, y0);
-    nvgLineTo(g_Nvg, x1, y1);
-    nvgLineTo(g_Nvg, x2, y2);
-    nvgLineTo(g_Nvg, x3, y3);
-    nvgClosePath(g_Nvg);
-    nvgFillColor(g_Nvg, nvgRGBA(150, 150, 150, 255));
-    nvgFill(g_Nvg);
-    nvgStrokeColor(g_Nvg, nvgRGBA(200, 200, 200, 255));
-    nvgStrokeWidth(g_Nvg, 1.0f);
-    nvgStroke(g_Nvg);
-
-    if (g_Ship->bDynamicAdjustment)
-    { 
-        // Small horizontal white line in the center of the diamond
-        float lineLength = diamondSize * 0.6f; // stroke length
-        float lineHalf = lineLength / 2.0f;
-
-        nvgBeginPath(g_Nvg);
-        nvgMoveTo(g_Nvg, centerX - lineHalf, centerY);
-        nvgLineTo(g_Nvg, centerX + lineHalf, centerY);
-        nvgStrokeColor(g_Nvg, nvgRGBA(255, 255, 255, 255)); // white
-        nvgStrokeWidth(g_Nvg, 2.0f); // line thickness
-        nvgStroke(g_Nvg);
-    }
-    else
-    {
-        // Small white circle in the center of the diamond
-        float radius = diamondSize * 0.12f; // radius of the circle
-        nvgBeginPath(g_Nvg);
-        nvgCircle(g_Nvg, centerX, centerY, radius);
-        nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255)); // white
-        nvgFill(g_Nvg);
-    }
-
     // Night =====================
 
 	if (g_Sky->SunPosition.y < 0.0f)
@@ -4240,7 +4323,7 @@ void RenderAutopilot(float x, float y)
         nvgFill(g_Nvg);
     }
 }
-void RenderChronometer(float y)
+void RenderChronometer(float x, float y)
 {
     if (!g_bChrono)
         return;
@@ -4250,20 +4333,20 @@ void RenderChronometer(float y)
     int hours = totalSec / 3600;
     int minutes = (totalSec % 3600) / 60;
     int seconds = totalSec % 60;
-    int milliseconds = static_cast<int>((secondsTotal - totalSec) * 1000);
+    int deciseconds = static_cast<int>((secondsTotal - totalSec) * 10);
 
     ostringstream oss;
     oss << std::setw(2) << std::setfill('0') << hours << ":"
         << std::setw(2) << std::setfill('0') << minutes << ":"
         << std::setw(2) << std::setfill('0') << seconds << "."
-        << std::setw(3) << std::setfill('0') << milliseconds;
+        << std::setw(0) << std::setfill('0') << deciseconds;
 
     nvgBeginPath(g_Nvg);
     nvgFontSize(g_Nvg, 24.0f);
     nvgFontFace(g_Nvg, "arial");
     nvgFillColor(g_Nvg, nvgRGBA(0, 0, 0, 255));
     nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-    nvgText(g_Nvg, g_WindowW / 2.0f, y, oss.str().c_str(), nullptr);
+    nvgText(g_Nvg, x, y, oss.str().c_str(), nullptr);
 }
 void RenderDashboard()
 {
@@ -4272,10 +4355,11 @@ void RenderDashboard()
     {
         int widthAutopilot = 80;
         int widthSeparation = 5;
+        float xChrono;
 
         if (g_Ship->ship.HasBowThruster)
         {
-            int widthControlFrame = 435;
+            int widthControlFrame = 455;
             if (g_Ship->ship.nPropeller == 2)
                 widthControlFrame += 30 + 10;
             int startX = g_WindowW_2 - (widthControlFrame + 2 * widthSeparation + 2 * widthAutopilot) / 2;
@@ -4290,6 +4374,7 @@ void RenderDashboard()
             RenderSternThruster(x, 65, 50, 20);
             x += 70;
             RenderThrottle(x, 10, 30, 100, 10);
+            xChrono = x;
             x -= 45;
             if (g_Ship->ship.nPropeller == 2)
                 x += (30 + 10) / 2;
@@ -4297,14 +4382,14 @@ void RenderDashboard()
             x += 150;
             if (g_Ship->ship.nPropeller == 2)
                 x += (30 + 10) / 2;
-            RenderPitchRoll(x, 10, 80, 70);
-            RenderRoT(x, 85, 80, 45);
+            RenderTime(x, 13, 100, 30);
+            RenderPitchRollRot(x, 35, 100, 95);
             RenderControlFrameNight(xFrame, 2, widthControlFrame, 136);
             RenderAutopilot(xFrame + widthControlFrame + widthSeparation, 2);
         }
         else
         {
-            int widthControlFrame = 435 - 35;
+            int widthControlFrame = 455 - 35;
             if (g_Ship->ship.nPropeller == 2)
                 widthControlFrame += 30 + 10;
             int startX = g_WindowW_2 - (widthControlFrame + 2 * widthSeparation + 2 * widthAutopilot) / 2;
@@ -4316,6 +4401,7 @@ void RenderDashboard()
             RenderCompass(x, 70, 58);
             x += 110;
             RenderThrottle(x, 10, 30, 100, 10);
+            xChrono = x;
             x -= 45;
             if (g_Ship->ship.nPropeller == 2)
                 x += (30 + 10) / 2;
@@ -4323,12 +4409,12 @@ void RenderDashboard()
             x += 150;
             if (g_Ship->ship.nPropeller == 2)
                 x += (30 + 10) / 2;
-            RenderPitchRoll(x, 10, 80, 70);
-            RenderRoT(x, 85, 80, 45);
+            RenderTime(x, 13, 100, 30);
+            RenderPitchRollRot(x, 35, 100, 95);
             RenderControlFrameNight(xFrame, 2, widthControlFrame, 136);
             RenderAutopilot(xFrame + widthControlFrame + widthSeparation, 2);
         }
-        RenderChronometer(150.0f);
+        RenderChronometer(xChrono + 35.0f, 150.0f);
     }
 }
 void RenderShortcuts()
@@ -4491,7 +4577,30 @@ void RenderCompassOfBinoculars()
     nvgLineTo(g_Nvg, centerX, capLineBottom);
     nvgStroke(g_Nvg);
 }
+void RenderSplashScreen(string subtitle)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, g_WindowW, g_WindowH);
+    glClearColor(1.0/255.0, 53.0/255.0, 75.0/255.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    nvgBeginFrame(g_Nvg, g_WindowW, g_WindowH, g_DevicePixelRatio);
+    {
+        RenderTitle(g_WindowW_2, g_WindowH_2, 72.0f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        if (!subtitle.empty())
+        {
+            nvgFontSize(g_Nvg, 20.0f);
+            nvgFontFace(g_Nvg, "arial");
+            nvgFillColor(g_Nvg, nvgRGBA(255, 255, 255, 255));
+            nvgTextAlign(g_Nvg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+            nvgText(g_Nvg, g_WindowW_2, g_WindowH_2 + 100.0f, subtitle.c_str(), nullptr);
+		}
+    }
+    nvgEndFrame(g_Nvg);
+
+    glfwSwapBuffers(g_hWindow);
+}
 void Render()
 {
     static bool bInit = false;
@@ -4574,8 +4683,9 @@ void Render()
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         // Render all the other objects
-        RenderTerrains(0);
-        g_Markup->Render(g_Camera, g_Ocean.get(), g_Sky.get());
+        RenderTerrain();
+        RenderTraffic();
+        RenderMarks();
         RenderAxis();
         RenderBalls();
         RenderCentralGridColored();
@@ -4594,10 +4704,16 @@ void Render()
             RenderShip();
             RenderOcean();
         }
+        
+        g_Lighthouses->RenderBeamLights(g_Camera, g_Ship->bLights);
 
-        // Particles
+        // Particles and billboards
         if (bAboveWater)
         {
+            g_Lighthouses->RenderLights(g_Camera, g_Ship->bLights);
+            g_Markup->RenderLights(g_Camera, g_Ship->bLights);
+			g_Traffics->RenderLights(g_Camera, g_Ship->bLights);
+			g_Ship->RenderNavLights(g_Camera);
             g_Ship->RenderSmoke(g_Camera, g_Sky.get());
             g_Ship->RenderSpray(g_Camera, g_Sky.get());
             g_Ship->RenderWakeVao(g_Camera);
@@ -4637,23 +4753,27 @@ void Render()
         glClearColor(0.0, 0.0, 0.0, 0.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        g_ShaderPostProcessing->use();  // Misc/post_processing.vert Misc/post_processing.frag
+        // Mist, Fog, Low intensity, Night vision
+
+        g_ShaderPostProcessing->use();  // Misc/post_processing.vert Misc/post_processing.frag 
         g_ShaderPostProcessing->setSampler2D("texColor", TexSceneColor, 0);     // Get the previous color texture (from the scene)
         g_ShaderPostProcessing->setSampler2D("texDepth", TexSceneDepth, 1);
         g_ShaderPostProcessing->setFloat("exposure", g_Sky->Exposure);
         g_ShaderPostProcessing->setFloat("near", 0.1f);
         g_ShaderPostProcessing->setFloat("far", 30000.f);
         g_ShaderPostProcessing->setFloat("horizonHeight", g_Camera.GetHorizonViewportY());
-        g_ShaderPostProcessing->setVec3("eyePos", g_Camera.GetPosition());          // For underwater effect
+        g_ShaderPostProcessing->setVec3("eyePos", g_Camera.GetPosition());      // For underwater effect
         g_ShaderPostProcessing->setVec3("oceanColor", g_Ocean->OceanColor);
         g_ShaderPostProcessing->setVec3("fogColor", g_Sky->FogColor);
         g_ShaderPostProcessing->setFloat("mistDensity", g_Sky->MistDensity);
         g_ShaderPostProcessing->setFloat("fogDensity", g_Sky->FogDensity);
-        g_ShaderPostProcessing->setFloat("uTime", g_TimerShipMotion.getTime());               // For underwater particles
+        g_ShaderPostProcessing->setFloat("uTime", g_TimerShipMotion.getTime()); // For underwater particles
         g_ShaderPostProcessing->setVec2("screenSize", vec2(g_WindowW, g_WindowH));
         g_ShaderPostProcessing->setBool("bLowIntensity", g_bLowIntensity && bAboveWater);
         g_ShaderPostProcessing->setBool("bNightVision", g_bNightVision && bAboveWater);
         g_ScreenQuadPost->Render();
+
+        // Rain, Binoculars
 
         if ((g_Sky->bRain || g_bBinoculars) && bAboveWater)
         {
@@ -4697,7 +4817,7 @@ void Render()
     {
         RenderStatusbar();
         RenderOceanCut(g_WindowW_2, 200, 800, 50, 0);
-        RenderTitle(g_WindowW - 70, g_WindowH - 25, 36.0f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        RenderTitle(g_WindowW - 70, g_WindowH - 25, 36.0f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         RenderInfo();
         RenderDashboard();
         RenderShortcuts();

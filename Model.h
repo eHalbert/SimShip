@@ -12,10 +12,14 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 #include <map>
 #include <vector>
 
+// glad
 #include <glad/glad.h>
+// glm
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+// stb_image
 #include <stb/stb_image.h>
+// assimp 5.4.3
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -118,6 +122,40 @@ public:
         // Dessiner opaque (ordre non important)
         for (auto* mesh : opaqueMeshes)
             mesh->Render(shader);
+
+        // Trier transparent par distance décroissante
+        std::sort(transparentMeshes.begin(), transparentMeshes.end(),
+            [&](Mesh* a, Mesh* b) {
+                float distA = glm::distance(camPos, a->TransformedCenter);
+                float distB = glm::distance(camPos, b->TransformedCenter);
+                return distA > distB; // plus éloigné en premier
+            }
+        );
+
+        // Dessiner transparent dans l’ordre trié
+        for (auto* mesh : transparentMeshes)
+            mesh->Render(shader);
+    }
+    void RenderTransparentMeshes(Shader& shader, Camera& camera, mat4 model)
+    {
+        if (!bVisible)
+            return;
+
+        vec3 camPos = camera.GetPosition();
+
+        // Actualiser les centers avec la matrice model
+        for (auto& mesh : mvMeshes)
+        {
+            vec4 newCenter = model * vec4(mesh.Center, 1.0f);
+            mesh.TransformedCenter = vec3(newCenter);
+        }
+
+        // Séparer opaque / transparent
+        vector<Mesh*> transparentMeshes;
+
+        for (auto& mesh : mvMeshes)
+            if (mesh.HasTransparency)
+                transparentMeshes.push_back(&mesh);
 
         // Trier transparent par distance décroissante
         std::sort(transparentMeshes.begin(), transparentMeshes.end(),
@@ -327,7 +365,7 @@ private:
         return Mesh(vVertices, vIndices, vTextures, mat, hasTransparency);
     }
 
-    unsigned int TextureFromFile(const char* path, const string& directory, bool& hasTransparency)
+    unsigned int textureFromFile(const char* path, const string& directory, bool& hasTransparency)
     {
         string filename = string(path);
         filename = directory + '/' + filename;
@@ -406,7 +444,7 @@ private:
             if (!skip)
             {   // if texture hasn't been loaded already, load it
                 sTexture texture;
-                texture.id = TextureFromFile(str.C_Str(), this->directory, texture.hasTransparency);
+                texture.id = textureFromFile(str.C_Str(), this->directory, texture.hasTransparency);
                 texture.type = typeName;
                 texture.path = str.C_Str();
                 vTextures.push_back(texture);

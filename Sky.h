@@ -31,6 +31,7 @@ struct sHM
 {
 	int hour;
 	int minute;
+	int timezoneOffsetHours;
 };
 
 class Sky

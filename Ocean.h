@@ -69,7 +69,8 @@ public:
 	void		Update(float t);
 	void		FourierTransform(GLuint spectrum);
 
-	bool		GetVertice(vec2 pos, vec3& output);
+	bool		GetVerticeXZ(vec2 pos, vec3& output);
+	bool		GetVerticeXYZ(vec3 pos, vec3& output);
 	void		GetRecordFromBuoy(vec2 pos, float t);
 	bool		GetWaveByWaveAnalysis(float& waves1_3, float& waveMax, int& nWaves, float& average_period);
 	vector<vec2>GetCut(int xN);
@@ -126,7 +127,7 @@ public:
 	bool				bVisible		= true;			// rendering of the ocean or not
 	bool				bEnvmap			= true;
 	bool				bShowPatch		= false;
-	int					NbPatches		= 200;
+	int					NbPatches		= 300;
 
 private:
 	void GetAllJacobians();
@@ -134,7 +135,7 @@ private:
 	void CreateMesh();
 	void CreateLODMeshes();
 	void CreateLODMesh(int meshSize, vector<GridVertex>& vertices, vector<unsigned int>& indices);
-	void GetPatchesDecal(vec2 Position, float w, float h, float Yaw, vector<pair<int, int>>& vPatches);
+	void GetPatchesDecal(vec2 Position, float w, float h, float Yaw);
 	void GetPatchVertices();
 	void WorldToPatch(float x, float z, float& xLocal, float& zLocal, int& i, int& j);
 
@@ -153,7 +154,7 @@ private:
 
 	// Textures of storage (glTexStorage2D)
 	GLuint					mTexInitialSpectrum		= 0;		// initial spectrum \tilde{h}_0
-	GLuint					mTextFrequencies		= 0;		// frequency \omega_i per wave vector
+	GLuint					mTexFrequencies			= 0;		// frequency \omega_i per wave vector
 	GLuint					mTexUpdatedSpectra[2]	= { 0 };	// updated spectra \tilde{h}(\mathbf{k},t) and \tilde{\mathbf{D}}(\mathbf{k},t) [reused for FT result]
 	GLuint					mTexTempData			= 0;		// intermediate data for FFT
 	GLuint					mTexDisplacements		= 0;		// displacements map
@@ -178,9 +179,13 @@ private:
 	int						mIndicesCount			= 0;
 	unique_ptr<float[]>		mPixelsDisplacement		= nullptr;
 
+	int iMinPatchDecal = 0;
+	int iMaxPatchDecal = 0;
+	int jMinPatchDecal = 0;
+	int jMaxPatchDecal = 0;
 	vector<vector<vec3>>	mvPatchVertices;
 	vector<GLuint>			mvVAOs;
-	vector<int>				mvMeshSizes				= { 256, 128, 64, 32, 16 };	// LOD 0, 1, 2, 3, 4
+	vector<int>				mvMeshSizes				= { 256, 128, 32, 8, 4 };	// LOD 0, 1, 2, 3, 4
 	vector<int>				mvIndicesCounts;
 
 	vector<double>			a_Frequences;

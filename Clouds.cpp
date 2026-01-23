@@ -10,7 +10,7 @@ Adapted from Federico Vaccaro
 
 #define INT_CEIL(n,d) (int)ceil((float)n/d)
 
-VolumetricClouds::VolumetricClouds(int width, int height, float windSpeedKN)
+Clouds::Clouds(int width, int height, float windSpeedKN)
 {
 	mVolumetricCloudsShader = make_unique<Shader>("", "", "", "Resources/Clouds/volumetric_clouds.comp");
 	mWeatherShader = make_unique<Shader>("", "", "", "Resources/Clouds/weather.comp");
@@ -89,7 +89,7 @@ VolumetricClouds::VolumetricClouds(int width, int height, float windSpeedKN)
 
 	GenerateModelTextures();
 }
-VolumetricClouds::~VolumetricClouds()
+Clouds::~Clouds()
 {
 	if (mTexPerlin)
 		glDeleteTextures(1, &mTexPerlin);
@@ -99,7 +99,7 @@ VolumetricClouds::~VolumetricClouds()
 		glDeleteTextures(1, &mTexWeather);
 }
 
-void VolumetricClouds::InitVariables()
+void Clouds::InitVariables()
 {
 	CloudSpeed = 200.0f;
 	Coverage = 0.3f;
@@ -126,7 +126,7 @@ void VolumetricClouds::InitVariables()
 	mTexPerlin = 0;
 	mTexWorley32 = 0;
 }
-void VolumetricClouds::SetCloudSpeed(float windSpeedKN) 
+void Clouds::SetCloudSpeed(float windSpeedKN) 
 {
 	float wind = 1.0f;
 
@@ -141,7 +141,7 @@ void VolumetricClouds::SetCloudSpeed(float windSpeedKN)
 
 	CloudSpeed = minSpeed + (windSpeedKN - minWind) * (maxSpeed - minSpeed) / (maxWind - minWind);
 }
-void VolumetricClouds::GenerateModelTextures()
+void Clouds::GenerateModelTextures()
 {
 	// PERLIN texture
 	glGenTextures(1, &mTexPerlin);
@@ -219,7 +219,7 @@ void VolumetricClouds::GenerateModelTextures()
 
 	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
-void VolumetricClouds::GenerateWeatherMap()
+void Clouds::GenerateWeatherMap()
 {
 	std::random_device rd;  // Will be used to obtain a seed for the random number engine
 	std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
@@ -243,7 +243,7 @@ void VolumetricClouds::GenerateWeatherMap()
 	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void VolumetricClouds::Render(Camera& camera, Sky* sky, vec2 wind)
+void Clouds::Render(Camera& camera, Sky* sky, vec2 wind)
 {
 	for (int i = 0; i < 4; ++i) 
 		glBindImageTexture(i, TexClouds[i], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);

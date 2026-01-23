@@ -4,7 +4,7 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 
 #include "Utility.h"
 
-// Support
+// Console
 void InitConsole()
 {
     // Si l'attachement échoue, créez une nouvelle console
@@ -32,6 +32,7 @@ void ConsoleClear()
     FillConsoleOutputCharacter(hConsoleOut, ' ', csbiInfo.dwSize.X * csbiInfo.dwSize.Y, Home, &dummy);
 }
 
+// glm
 void PrintGlmMatrix(mat4& mat, string name)
 {
     cout << "glm::mat : " << name << endl;
@@ -63,21 +64,35 @@ void PrintGlmVec3(vec3 vec)
     cout << "]" << endl;
 }
 
+// OpenGL
 void SetVsync(int interval)
 {
     glfwSwapInterval(interval);
 }
-void GetLimitsGPU()
+void GetOpenGLInfo()
 {
-    // Vérifiez les limites de votre GPU
+    // Info on version
+    const GLubyte* version = glGetString(GL_VERSION);
+    std::cout << "Version OpenGL: " << version << std::endl;
+    const GLubyte* shading_version = glGetString(GL_SHADING_LANGUAGE_VERSION);
+    std::cout << "Version GLSL: " << shading_version << std::endl;
+    GLint profile;
+    glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+    if (profile & GL_CONTEXT_CORE_PROFILE_BIT)                  cout << "Profil Core" << endl;
+    else if (profile & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT)    cout << "Profil Compatibility" << endl;
+    else                                                        cout << "Profil Not Specified" << endl;
+    
+    cout << endl;
+
+    // Limits of the GPU
     GLint workGroupSize[3], workGroupInvocations;
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &workGroupSize[0]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &workGroupSize[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &workGroupSize[2]);
     glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &workGroupInvocations);
 
-    cout << "Taille maximale des groupes de travail : " << workGroupSize[0] << " x " << workGroupSize[1] << " x " << workGroupSize[2] << endl;
-    cout << "Nombre maximal d'invocations par groupe : " << workGroupInvocations << endl;
+    cout << "Maximum size of work groups: " << workGroupSize[0] << " x " << workGroupSize[1] << " x " << workGroupSize[2] << endl;
+    cout << "Maximum number of invocations per group: " << workGroupInvocations << endl;
 
     /*
     // Paramètres optimisés pour RTX 4070
@@ -165,28 +180,7 @@ void check_opengl_error(string const& file, string const& function, int line)
     }
 }
 
-wstring GetExecutablePath()
-{
-    wchar_t buffer[MAX_PATH];
-    GetModuleFileName(NULL, buffer, MAX_PATH);
-
-    wstring ws = filesystem::path(wstring(buffer)).parent_path().wstring();
-    ws += L"\\";
-
-    return ws;
-}
-string ReplaceBackSlash(string& chaine)
-{
-    string resultat = chaine;
-    replace(resultat.begin(), resultat.end(), '\\', '/');
-    return resultat;
-}
-string RemoveExtensionAndPath(const string pathname)
-{
-    int period = pathname.find_last_of(".");
-    int dash = pathname.find_last_of("/");
-    return pathname.substr(dash + 1, period - dash - 1);
-}
+// Files
 vector<string> ListFiles(const string& folder, const string& ext)
 {
     vector<string> files;
@@ -198,25 +192,34 @@ vector<string> ListFiles(const string& folder, const string& ext)
     return files;
 }
 
-uint32_t Log2OfPow2(uint32_t x)
+// Strings
+string wstring_to_utf8(const wstring& wstr)
 {
-    uint32_t ret = 0;
-
-    while (x >>= 1)
-        ++ret;
-
-    return ret;
+    if (wstr.empty()) return string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), NULL, 0, NULL, NULL);
+    string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    return strTo;
+}
+wstring utf8_to_wstring(const string& str)
+{
+    if (str.empty()) return wstring();
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
+    wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
 }
 
-float MsToKnots(float speedMS)
+// Conversions
+float ms_to_knot(float speedMS)
 {
     return speedMS * 3600.0f / 1852.0f;
 }
-float KnotsToMS(float speedKnots)
+float knot_to_ms(float speedKnots)
 {
     return speedKnots * 1852.0f / 3600.0f;
 }
-float WindVec_Dir(vec2 windVector)
+float wind_to_dirdeg(vec2 windVector)
 {
     // Extraire x et z du vecteur de vent
     float x = -windVector.x; // Inverser x pour échanger Est et Ouest
@@ -230,19 +233,20 @@ float WindVec_Dir(vec2 windVector)
 
     return angleDeg;
 }
-vec2 WindDirSpeed_Vec(float directionDEG, float speedKN)
+vec2 wind_from_speeddir(float directionDEG, float speedKN)
 {
     // Convertir la direction en radians
     float directionRad = radians(directionDEG);
 
     // Calculer les composantes x et y du vecteur
-    float x = KnotsToMS(speedKN) * sin(directionRad);
-    float y = KnotsToMS(-speedKN) * cos(directionRad);
+    float x = knot_to_ms(speedKN) * sin(directionRad);
+    float y = knot_to_ms(-speedKN) * cos(directionRad);
 
     // Retourner le vecteur vent
     return vec2(x, y);
 }
 
+// Interpolations
 quat RotationBetweenVectors(vec3 A, vec3 B)
 {
     A = glm::normalize(A);
@@ -300,11 +304,53 @@ bool IsInCircle(const vec3& circle, const vec2& point)
     float dy = point.y - circle.y;
     return (dx * dx + dy * dy) <= (circle.z * circle.z);
 }
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4, vec2& p)
+{
+    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (denom == 0)
+        return 0;		// the segments are parallel
 
+    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+    {
+        p.x = p1.x + t * (p2.x - p1.x);
+        p.y = p1.y + t * (p2.y - p1.y);
+        return true;
+    }
+    else
+        return false;	// the segments do not intersect
+}
+bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4)
+{
+    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+    if (denom == 0)
+        return 0;		// the segments are parallel
+
+    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
+    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+        return true;
+    else
+        return false;	// the segments do not intersect
+}
+
+// Geography
 const float EARTH_RADIUS = 6371000.0; // Mean radius of the Earth in meters
 const vec2 REFERENCE_POINT(-2.94097114, 47.38162231); // Houat
+float lon_to_opengl(float lon)
+{
+    float dLon = glm::radians(lon - REFERENCE_POINT.x);
 
-vec3 LonLatToOpenGL(float lon, float lat)
+    return EARTH_RADIUS * dLon * cos(glm::radians(REFERENCE_POINT.y));
+}
+float lat_to_opengl(float lat)
+{
+    float dLat = glm::radians(lat - REFERENCE_POINT.y);
+
+    return -EARTH_RADIUS * dLat;
+}
+vec3 lonlat_to_opengl(float lon, float lat)
 {
     float dLon = glm::radians(lon - REFERENCE_POINT.x);
     float dLat = glm::radians(lat - REFERENCE_POINT.y);
@@ -314,18 +360,62 @@ vec3 LonLatToOpenGL(float lon, float lat)
 
     return vec3(x, 0.0f, z);
 }
-vec2 OpenGLToLonLat(float x, float z)
+vec2 opengl_to_lonlat(float x, float z)
 {
     float lon = REFERENCE_POINT.x + glm::degrees(x / (EARTH_RADIUS * cos(glm::radians(REFERENCE_POINT.y))));
     float lat = REFERENCE_POINT.y - glm::degrees(z / EARTH_RADIUS);
 
     return vec2(lon, lat);
 }
-vec3 ConvertToFloat(vec3 v)
+float get_angle_from_north(vec3 dir)
+{
+    // Vector representing North (negative Z axis)
+    vec3 north(0.0f, 0.0f, -1.0f);
+
+    // Projection of the direction onto the XZ plane
+    vec3 directionXZ(dir.x, 0.0f, dir.z);
+
+    // Normalization of the projected vector
+    directionXZ = normalize(directionXZ);
+
+    // Calculating the angle between the projected direction and North
+    float North = glm::orientedAngle(north, directionXZ, vec3(0.0f, 1.0f, 0.0f));
+
+    // Converting angle to degrees
+    North = degrees(North);
+
+    North = 360.0f - North;
+
+    // Adjusting the angle to always be positive (0-360)
+    while (North < 0)
+        North += 360.0f;
+    while (North > 360.0f)
+        North -= 360.0f;
+    
+    return North;
+}
+float get_yaw_from_hdg(float hdgDeg)
+{
+    float deg_Yaw = fmod(450.0f - hdgDeg, 360.0f);
+    if (deg_Yaw < 0.0f)
+        deg_Yaw += 360.0f;
+    return glm::radians(deg_Yaw);
+}
+float get_hdg_from_yaw(float yawRad)
+{
+    float yaw_deg = glm::degrees(yawRad);
+    float hdg = fmod(450.0f - yaw_deg, 360.0f);
+    if (hdg < 0.0f)
+        hdg += 360.0f;
+    return hdg;
+}
+
+// Colors
+vec3 color_255_to_1(vec3 v)
 {
     return vec3((float)v.x / 255.0f, (float)v.y / 255.0f, (float)v.z / 255.0f);
 }
-void RGBtoHSL(const vec3& rgb, float& h, float& s, float& l) 
+void rgb_to_hsl(const vec3& rgb, float& h, float& s, float& l) 
 {
     float r = rgb.r / 255.0f;
     float g = rgb.g / 255.0f;
@@ -549,52 +639,3 @@ wstring SaveClientArea(HWND hwnd)
     return name;
 }
 
-bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4, vec2& p)
-{
-    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-    if (denom == 0)
-        return 0;		// the segments are parallel
-
-    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
-    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
-    {
-        p.x = p1.x + t * (p2.x - p1.x);
-        p.y = p1.y + t * (p2.y - p1.y);
-        return true;
-    }
-    else
-        return false;	// the segments do not intersect
-}
-bool IntersectionOfSegments(const vec2& p1, const vec2& p2, const vec2& p3, const vec2& p4)
-{
-    float denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-    if (denom == 0)
-        return 0;		// the segments are parallel
-
-    float t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
-    float u = -((p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x)) / denom;
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
-        return true;
-    else
-        return false;	// the segments do not intersect
-}
-
-string wstring_to_utf8(const wstring& wstr)
-{
-    if (wstr.empty()) return string();
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(),
-        (int)wstr.size(), NULL, 0, NULL, NULL);
-    string strTo(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(),
-        (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
-    return strTo;
-}
-wstring utf8_to_wstring(const string& str)
-{
-    if (str.empty()) return wstring();
-    int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
-    wstring wstrTo(size_needed, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &wstrTo[0], size_needed);
-    return wstrTo;
-}

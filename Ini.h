@@ -34,7 +34,9 @@ public:
 	bool			GetBoolean(const wchar_t* section, const wchar_t* key, bool defaultValue);
 	unsigned long	GetColor(const wchar_t* section, const wchar_t* key, unsigned long defaultValue);
 	vec3			GetVec3(const wchar_t* section, const wchar_t* key, const vec3& defaultValue);
+	dvec3			GetdVec3(const wchar_t* section, const wchar_t* key, const dvec3& defaultValue);
 	vector<vec3>	GetVec3Array(const wchar_t* section, const wchar_t* key, const vector<vec3>& defaultValue);
+	vector<dvec3>	GetdVec3Array(const wchar_t* section, const wchar_t* key, const vector<dvec3>& defaultValue);
 
 	// Set
 	bool			SetString(const wchar_t* section, const wchar_t* key, wchar_t * value);
@@ -45,7 +47,9 @@ public:
 	bool			SetBoolean(const wchar_t* section, const wchar_t* key, bool value);
 	bool			SetColor(const wchar_t* section, const wchar_t* key, unsigned long value);
 	bool			SetVec3(const wchar_t* section, const wchar_t* key, const vec3& value);
+	bool			SetdVec3(const wchar_t* section, const wchar_t* key, const dvec3& value);
 	bool			SetVec3Array(const wchar_t* section, const wchar_t* key, const vector<vec3>& vecArray);
+	bool			SetdVec3Array(const wchar_t* section, const wchar_t* key, const vector<dvec3>& vecArray);
 
 private:
 

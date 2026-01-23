@@ -525,11 +525,11 @@ class Cylinder
 {
 public:
     Cylinder(float radius = 1.0f, float height = 2.0f, int segments = 32)
-        : mRadius(radius), mHeight(height), mSegments(segments)
+        : mSegments(segments)
     {
         vector<float> vertices;
 
-        // Generate the mvVertices for the sides of the cylinder
+        // Generate the vertices for the sides of the cylinder
         for (int i = 0; i <= segments; ++i)
         {
             float theta = 2.0f * M_PI * float(i) / float(segments);
@@ -551,7 +551,7 @@ public:
             vertices.push_back(1.0f);
         }
 
-        // Generate the mvVertices for the cylinder bases
+        // Generate the vertices for the cylinder bases
         for (int base = 0; base < 2; ++base)
         {
             float y = base * height;
@@ -629,8 +629,6 @@ private:
     unsigned int        mVao;
     unique_ptr<Shader>  mShader;
     int                 mSegments;
-    float               mRadius;
-    float               mHeight;
 };
 
 class Sphere

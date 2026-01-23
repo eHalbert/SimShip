@@ -57,8 +57,11 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 #include "Texture.h"
 #include "Ship.h"
 #include "Markup.h"
+#include "Lighthouse.h"
 #include "Clouds.h"
 #include "Ini.h"
+#include "UdpSender.h"
+#include "Traffic.h"
 
 #pragma warning( push )
 #pragma warning( disable : 4244 ) // conversion de 'x' en 'y', perte possible de données
@@ -67,7 +70,6 @@ http://creativecommons.org/licenses/by-nc-nd/4.0/ */
 using namespace std;
 using namespace glm;
 namespace fs = std::filesystem;
-
 
 GLFWwindow        * g_hWindow			= nullptr;
 HWND				g_hWnd				= nullptr;
@@ -78,12 +80,23 @@ uint32_t			g_WindowH_2			= 540;
 uint32_t			g_WindowX			= 0;
 uint32_t			g_WindowY			= 0;
 bool                g_IsFullScreen		= false;
-wstring				g_DirExecutable;
 HANDLE				g_hConsole;					// Handle of the console (can be shown and can be hidden)
-NVGcontext        * g_Nvg				= nullptr;
-float				g_DevicePixelRatio = 1.0f;
 wstring				g_CaptureName;
 eh::Timer			g_Chrono;
+int					g_ChronoStep = -1;
+int g_OldWindowX, g_OldWindowY, g_OldWindowW, g_OldWindowH, g_OldClientX = 0, g_OldClientY, g_OldClientW, g_OldClientH;
+
+
+// NANOVG //////////////////////////////////////////
+NVGcontext        * g_Nvg				= nullptr;
+int					g_NvgImgClock		= 0;
+int					g_NvgImgSoundOff	= 0;
+int					g_NvgImgSoundUp		= 0;
+int					g_NvgImgTimer		= 0;
+int					g_NvgImgMto1		= 0;
+int					g_NvgImgMto2		= 0;
+int					g_NvgImgMto3		= 0;
+float				g_DevicePixelRatio	= 1.0f;
 
 // ImGui windows
 bool                g_bShowSceneWindow			= false;	// [ F2 ]
@@ -94,6 +107,7 @@ bool                g_bShowOceanAnalysisWindow	= false;
 bool				g_bShowShortcuts			= false;
 bool                g_bShowShipForcesWindows	= false;	// [ F6 ]
 
+// SOUNDS ////////////////////////////////////////
 SoundManager* SoundManager::instance	= nullptr; // Initialisation du pointeur statique (sinon, à placer dans un fichier Sound.cpp)
 SoundManager      * g_SoundMgr			= nullptr;
 unique_ptr<Sound>	g_SoundSeagull[8];
@@ -103,7 +117,7 @@ unique_ptr<Sound>	g_SoundRain;
 bool				g_bSoundRain = false;
 
 // VIEWS //////////////////////////////////////////
-vec2                g_InitialPosition	= vec2(-5.09732676, 48.47529221);
+vec2                g_InitialPosition	= vec2(-2.94097114, 47.38162231);
 vector<sPositions>	g_vPositions;					// List of positions to be used by the ship
 int					g_NoPosition		= 0;		// The number of the position in the list		
 Camera				g_Camera;
@@ -129,6 +143,7 @@ unique_ptr<Shader>	g_ShaderCamera;
 unique_ptr<Shader>  g_ShaderPostProcessing;
 unique_ptr<Shader>  g_ShaderRain;
 unique_ptr<Shader>  g_ShaderFXAA;
+unique_ptr<Shader>  g_ShaderRainVolume;
 
 // FRAMEBUFFERS //////////////////////////////////////
 GLuint              FBO_REFLECTION		= 0;        // Used only for the ship reflection 
@@ -152,29 +167,37 @@ GLuint              TexRainColor		= 0;
 GLuint              TexRainDepth		= 0;
 
 unique_ptr<ScreenQuad> g_ScreenQuadPost;
+unique_ptr<ScreenQuad> g_ScreenQuadRainVolume;
+
+// For Rain volume effect
+GLuint				FBO_OCEAN_TEMP		= 0;
+GLuint				TexOceanTempColor	= 0;
+GLuint				TexOceanTempDepth	= 0;
 
 // OBJECTS //////////////////////////////////////////
 bool				g_bWireframe		= false;   // For the entire scene
 unique_ptr<Grid>    g_Grid;
 bool				g_bGridVisible		= false;
 unique_ptr<Cube>    g_Axe;
-unique_ptr<Sphere>  g_FloatingBall;
+unique_ptr<Sphere>  g_StaticBall;
 unique_ptr<Model>   g_ArrowWind;
 
 // WIND /////////////////////////////////////////////
 vec2				g_Wind				= vec2(0.0f);
-float				g_WindDirectionDEG	= 0.0f;
-float				g_WindSpeedKN		= 1.0f;
+float				g_TWS_Deg			= 0.0f;
+float				g_TWS_Kn			= 1.0f;
 
-// SHIP ////////////////////////////////////////////
+// SHIP /////////////////////////////////////////////
 unique_ptr<Ship>    g_Ship;						// The ship selected
 vector<sShip>       g_vShips;					// The list of ships
-int					g_NoShip			= 0;    // The number of the ship in the list
+int					g_NoShip = 0;				// The index in the list of the ships
+unique_ptr<UdpSender> g_UdpSender;				// Class to send the NMEA sentences
 bool                g_bShipWake			= true; // Display the wake (texture around the ship)
 int                 g_LowMass			= 0;	// Half of the mass (for ImGui selection purpose)
 int					g_HighMass			= 0;	// Double of the mass (for ImGui selection purpose)
 bool				g_bReset			= true;	// Inhibit motion during a short period
 
+// INTERFACE ////////////////////////////////////////
 vec4                g_CtrlPanel			= vec4(0.0f);
 vec4                g_CtrlThrottle1		= vec4(0.0f);
 float               g_CtrlThrottleHigh1	= 0.0f;
@@ -197,18 +220,22 @@ vec4                g_CtrlAutopilotM1	= vec4(0.0f);
 vec4                g_CtrlAutopilotM10	= vec4(0.0f);
 vec4                g_CtrlAutopilotP1	= vec4(0.0f);
 vec4                g_CtrlAutopilotP10	= vec4(0.0f);
-vec4                g_CtrlAutopilotDynAdjust = vec4(0.0f);
 vec4                g_CtrlTimeHour		= vec4(0.0f);
 vec4				g_CtrlTimeMinute	= vec4(0.0f);
 vec4                g_CtrlWind			= vec4(0.0f);
 vec4                g_CtrlNow			= vec4(0.0f);
+vec4                g_CtrlSound			= vec4(0.0f);
+vec4                g_CtrlTimer			= vec4(0.0f);
+vec4                g_CtrlMto1			= vec4(0.0f);
+vec4                g_CtrlMto2			= vec4(0.0f);
+vec4                g_CtrlMto3			= vec4(0.0f);
 
 // SKY /////////////////////////////////////////////
-unique_ptr<Sky>    g_Sky;
-unique_ptr<ScreenQuad> g_ScreenQuadCloud;   // Used with the background shader to Draw the clouds
-unique_ptr<VolumetricClouds> g_Clouds;
+unique_ptr<Sky>		g_Sky;
+bool				g_bSkyVisible = true;
+unique_ptr<ScreenQuad> g_ScreenQuadCloud;				// Used with the background shader to draw the clouds
+unique_ptr<Clouds>	g_Clouds;
 unique_ptr<Shader>  g_ShaderBackground;
-bool				g_bSkyVisible			= true;
 
 // OCEANS //////////////////////////////////////////
 unique_ptr<Ocean>   g_Ocean;
@@ -224,10 +251,31 @@ bool				g_bShipShadow			= true;
 bool                g_bShowTerrain			= true;
 vector<sTerrain>    g_vTerrains;
 int					g_idxHouat = 0;
-unique_ptr<Model>   g_Pier;
 unique_ptr<Model>   g_Port;
 vector<sLine>		g_vPortLines;
 unique_ptr<Markup>  g_Markup;
+unique_ptr<LighthouseMgr> g_Lighthouses;
+
+// TRAFFIC //////////////////////////////////////////
+unique_ptr<Traffics> g_Traffics;
+
+/////////////////////////////////////////////////////
+NVGcolor			g_ColorBlack	= nvgRGB(0, 0, 0);
+NVGcolor			g_ColorGray192	= nvgRGB(192, 192, 192);
+NVGcolor			g_ColorWhite	= nvgRGB(255, 255, 255);
+
+NVGcolor			g_ColorRed		= nvgRGB(200, 0, 0);
+NVGcolor			g_ColorGreen	= nvgRGB(0, 200, 0);
+NVGcolor			g_ColorBlue		= nvgRGB(0, 0, 200);
+NVGcolor			g_ColorAmbre	= nvgRGB(255, 165, 0);
+NVGcolor			g_ColorCyan		= nvgRGB(0, 255, 255);
+NVGcolor			g_ColorMagenta	= nvgRGB(255, 0, 255);
+NVGcolor			g_ColorYellow	= nvgRGB(255, 255, 0);
+
+NVGcolor			g_ColorSimShip1 = nvgRGB(37, 87, 131);
+NVGcolor			g_ColorSimShip2 = nvgRGB(44, 129, 169);
+NVGcolor			g_ColorSimShip3 = nvgRGB(118, 150, 175);
+NVGcolor			g_ColorSimShip4 = nvgRGB(184, 199, 208);
 
 /////////////////////////////////////////////////////
 vector<pair<string, string>> vShortcuts = {
@@ -286,9 +334,8 @@ void    InitFBO();
 void	InitImGUI();
 void	InitNanoVg();
 void	InitFPSCounter();
+int		LoadNvgIcon(string name);
 void	LoadPositions();
-void	LoadPositions();
-void	SavePositions();
 void	SetPosition();
 void	LoadModels();
 void    LoadTerrains();
@@ -296,9 +343,11 @@ void	LoadPortContour();
 bool	CheckCrossingPort();
 void    LoadShips();
 void	LoadShips();
-void	SaveShips();
 void	SetShip(int n);
+void	SetMeteo(int n);
 void    LoadSounds();
 void    UpdateSounds();
 void	UpdateFPS();
+void	SendNMEA(float time);
+void	RenderSplashScreen(string subtitle);
 void	Render();

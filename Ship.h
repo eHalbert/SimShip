@@ -43,7 +43,7 @@ using namespace glm;
 #include "Model.h"
 #include "Sound.h"
 #include "Timer.h"
-#include "Particles.h"
+#include "Spray.h"
 #include "Flag.h"
 
 struct sTriangle
@@ -53,8 +53,8 @@ struct sTriangle
 	int			WaterStatus;						// 0 = under, 3 = above, 1 or 2 = new triangles
 	vec3		Color	= vec3(0.0f, 0.0f, 0.0f);	// Color of the triangle in debug mode
 	float		Area	= 0.0f;						// Total area
-	vec3		CoG		= vec3(0.0f, 0.0f, 0.0f);	// Centre of gravity
-	vec3		Normal	= vec3(0.0f, 0.0f, 0.0f);	// Normal vector
+	vec3		CoG		= vec3(0.0f, 0.0f, 0.0f);		// Centre of gravity
+	vec3		Normal	= vec3(0.0f, 0.0f, 0.0f);		// Normal vector
 
 	float		Depth;								// Profondeur
 	vec3		vPressure;							// Vecteur force de pression
@@ -95,6 +95,7 @@ class Ship
 public:
 	Ship() {};
 	~Ship();
+	eh::Timer chrono;
 
 	void	Init(sShip& ship, Camera& camera);
 	void	SetOcean(Ocean* ocean);
@@ -102,12 +103,15 @@ public:
 	float	GetLength() { return mLength; }
 	float	GetWidth() { return mWidth; }
 	sBBvec3 GetBoundingBox();
-
+	mat4	GetWorld() { return mWorld; }
 	void	ResetVelocities();
 	vec3	TransformPosition(vec3 v);
 	vec3	TransformVector(vec3 v);
 	void	SetYawFromHDG(float hdg);
 	void	Update(float time);
+	string	NMEA_RMC();
+	string	NMEA_VHW();
+	string	NMEA_VWR();
 
 	void	RenderSmoke(Camera& camera, Sky* sky);
 	void	RenderSpray(Camera& camera, Sky* sky);
@@ -115,6 +119,8 @@ public:
 	void	RenderContour(Camera& camera);
 	void	RenderReflexion(Camera& camera, Sky* sky);
 	void	RenderShadow(Camera& camera, Sky* sky);
+	void	RenderNavLights(Camera& camera);
+	void	RenderStencilForWindows(Camera& camera);
 	void	Render(Camera& camera, Sky* sky);
 
 	GLuint	GetTraceID();
@@ -154,10 +160,12 @@ public:
 	float				LinearVelocity		= 0.0f;
 	float				DriftVelocity		= 0.0f;
 	float				DriftAngleDeg		= 0.0f;
-	float				Velocity			= 0.0f;
 	float				TurnDiameter_m		= 0.0f;
 	float				TurnDiameter_L		= 0.0f;
-	float				WindApparent		= 0.0f;
+	float				AWS					= 0.0f;
+	float				AWD					= 0.0f;
+	float				AWA					= 0.0f;
+	char				WindLeftRight;
 
 	// Engine
 	int					PowerCurrentStep1	= 0;
@@ -168,7 +176,7 @@ public:
 	float				PropRpm2			= 0.0f;
 
 	// Rudder
-	float				RudderCurrentStep	= 0.0f;
+	int					RudderCurrentStep	= 0.0f;
 	float				RudderAngleDeg		= 0.0f;		// Deg
 	
 	// Bow Thruster 1
@@ -184,7 +192,6 @@ public:
 	// Autopilot
 	bool				bAutopilot			= false;
 	int					HDGInstruction		= 0;
-	bool				bDynamicAdjustment	= false;
 
 	// Switches
 	bool				bVisible			= true;
@@ -226,7 +233,7 @@ private:
 	void	InitSounds(Camera& camera);
 	void	InitSpray(vector<vec3>& contour);
 	void	InitSmoke();
-
+	void	InitBillboard();
 
 	// Contour
 	vector<vec3> ComputeContour();
@@ -251,14 +258,14 @@ private:
 	// SYSTEM OF FORCES
 	void	ComputeArchimede();
 	void    ComputeGravity();
-	void	ComputeHeave();
+	void	ComputeHeaveDrag();
 	void	ComputeThrust1(float dt);
 	void	ComputeThrust2(float dt);
 	void	ComputePropellersDrag();
 	void	ComputePropellersTorque();
-	void	ComputeResistanceViscous();
-	void	ComputeResistanceWaves();
-	void	ComputeResistanceResidual();
+	void	ComputeViscousDrag();
+	void	ComputeWavesDrag();
+	void	ComputeResidualDrag();
 	void	ComputeBowThrust(float dt);
 	void	ComputeSternThrust(float dt);
 	void	ComputeRudder(float dt);
@@ -266,7 +273,7 @@ private:
 	void	ComputeCentrifugal();
 	float	ComputePivotPosition();
 	void	ComputeForces(float dt);
-	void	UpdateAutopilot(float dt);
+	void	ComputeAutopilot(float dt);
 	void	UpdateVaoPressureLines();
 
 	void	UpdateSounds();
@@ -275,11 +282,9 @@ private:
 	void	UpdateWakeBuffer();
 	void	UpdateTextureWakeVao();
 
-	string	NMEA_RMC();
-
 	void	RenderForceRefBody(Camera& camera, vec3 P, vec3 V, float scale, vec3 color, bool bRenderOrigin);
 	void	RenderForceRefWorld(Camera& camera, sForce& f, float scale, vec3 color, bool bRenderOrigin);
-	void	RenderNavLight(Camera& camera, int i, float distance);
+	void	RenderOneLight(Camera& camera, int i);
 	void	RenderPropellers(Camera& camera, Sky* sky);
 	void	RenderRudders(Camera& camera, Sky* sky);
 	void	RenderRadars(Camera& camera, Sky* sky);
@@ -308,28 +313,27 @@ private:
 	int					mLinesCount = 0;
 
 	// Forces
-	sForce				Archimede;
-	sForce				Gravity;
-	sForce				ResistanceHeave;
-	sForce				Thrust1;
-	sForce				Thrust2;
-	sForce				PropDrag1;
-	sForce				PropDrag2;
-	sForce				PropTorque1;
-	sForce				PropTorque2;
-	sForce				ResistanceViscous;
-	sForce				ResistanceWaves;
-	sForce				ResistanceResidual;
-	sForce				BowThrust;
-	sForce				SternThrust;
-	sForce				RudderLift;
-	sForce				RudderDrag;
-	sForce				WindRotation;
-	sForce				WindFront;
-	sForce				WindRear;
-	sForce				ResistanceAir;
-	sForce				Centrifugal;
-	sForce				COGSOG;
+	sForce				mArchimede;
+	sForce				mGravity;
+	sForce				mHeaveDrag;
+	sForce				mThrust1;
+	sForce				mThrust2;
+	sForce				mPropDrag1;
+	sForce				mPropDrag2;
+	sForce				mPropTorque1;
+	sForce				mPropTorque2;
+	sForce				mViscousDrag;
+	sForce				mWavesDrag;
+	sForce				mResidualDrag;
+	sForce				mBowThrust;
+	sForce				mSternThrust;
+	sForce				mRudderLift;
+	sForce				mRudderDrag;
+	sForce				mWindTorque;
+	sForce				mWindFrontDrag;
+	sForce				mWindRearDrag;
+	sForce				mAirDrag;
+	sForce				mCentrifugalTorque;
 
 	// Models
 	unique_ptr<Model>	mModelFull	= 0;
@@ -357,9 +361,11 @@ private:
 	unique_ptr<Shader>	mShaderShip;
 	unique_ptr<Shader>	mShaderUnicolor;
 	unique_ptr<Shader>	mShaderNavLight;
+	unique_ptr<Shader>	mShaderLight;
 	unique_ptr<Shader>	mShaderSmokeCompute;
 	unique_ptr<Shader>	mShaderSmokeRender;
 	unique_ptr<Shader>	mShaderShadow;
+	unique_ptr<Shader>	mShaderStencil;
 
 	// Environment
 	unique_ptr<Texture>	mTexEnvironment;			// Environment texture (shaderSky)
@@ -378,34 +384,34 @@ private:
 	float				mVolume			= 0.0f;			// m3
 	float				mDraft			= 0.0f;			// m
 	float				mAirDraft		= 0.0f;			// m
-	float				AreaWettedMax	= 0.0f;			// m2
-	float				AreaXZ			= 0.0f;			// m2
-	float				AreaXZ_RacCub	= 0.0f;
-	float				AreaFront		= 0.0f;
-	vec3				AreaFrontCenter = vec3(0.0f);
-	float				AreaLat			= 0.0f;
-	vec3				AreaLatCenter	= vec3(0.0f);
+	float				mAreaWettedMax	= 0.0f;			// m2
+	float				mAreaXZ			= 0.0f;			// m2
+	float				mAreaXZ_RacCub	= 0.0f;
+	float				mAreaFront		= 0.0f;
+	vec3				mAreaFrontCenter = vec3(0.0f);
+	float				mAreaLat			= 0.0f;
+	vec3				mAreaLatCenter	= vec3(0.0f);
 
 	vec3				mCentroid		= vec3(0.0f);
-	float				Ixx				= 0.0f;
-	float				Iyy				= 0.0f;
-	float				Izz				= 0.0f;
-	float				Ixy				= 0.0f;
-	float				Ixz				= 0.0f;
-	float				Iyz				= 0.0f;
+	float				mIxx			= 0.0f;
+	float				mIyy			= 0.0f;
+	float				mIzz			= 0.0f;
+	float				mIxy			= 0.0f;
+	float				mIxz			= 0.0f;
+	float				mIyz			= 0.0f;
 	vec3				mBow			= vec3(0.0f);	// From centre to bow
 	vec3				mStern			= vec3(0.0f);	// From centre to stern
 	vec3				mWakePivot		= vec3(0.0f);	// Close to the stern;
 	float				mRudderArea		= 0.0f;
 
 	// World matrice and time
-	mat4				World			= mat4(1.0f);
+	mat4				mWorld			= mat4(1.0f);
 	float               mDt				= 0.0f;			// Elapsed time since last frame
 
 	// Constants
 	const float			mGRAVITY				= 9.80665f;	// m / s^2
 	const float			mWATER_DENSITY			= 1025.f;	// SI = kg / m3
-	const double		mKINEMATIC_VISCOSITY	= 1.19e-6;	// Viscosité cinématique de l'eau de mer (m^2/s)
+	const float			mKINEMATIC_VISCOSITY	= 1.19e-6f;	// Viscosité cinématique de l'eau de mer (m^2/s)
 	const float			mAIR_DENSITY			= 1.225f;	// SI = kg / m3
 	const float			mPLATE_DRAG_COEFF		= 1.28f;
 
@@ -474,6 +480,9 @@ private:
 	vector<sSprayPt>	mRight;
 	float				mRandomOffsetRange = 0.1f;
 	unique_ptr<Spray>	mSpray;
+
+	//== L I G H T S ==============================
+	GLuint              mQuadVAO = 0;
 
 	//== TRACE =====================================
 	
