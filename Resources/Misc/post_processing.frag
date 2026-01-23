@@ -35,7 +35,6 @@ out vec4 my_FragColor;
 const float f =  2.0 * sqrt(2.0);
 
 float hash(vec2 p) {
-    //return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
     return fract(43758.5453 * fract(p.x * 0.3183099 + p.y * 0.3678794));
 }
 
@@ -51,7 +50,7 @@ void main()
     if (eyePos.y < 0.0)
     {
         // Underwater fog: depends only on camera-pixel distance
-        float fogFactor = 1.0 - exp(-0.01 * linearDepth); // The further you look, the denser it is.
+        float fogFactor = 1.0 - exp(-0.1 * linearDepth); // The further you look, the denser it is.
         fogFactor = clamp(fogFactor, 0.0, 1.0);
 
         // Intensity depending on camera depth
