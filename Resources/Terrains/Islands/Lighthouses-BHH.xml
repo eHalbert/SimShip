@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<Lighthouses>
+	<Lighthouse>
+		<Name>Port B</Name>
+		<Latitude value="47.3881073" />
+		<Longitude value="-2.98600936" />
+		<Height value="14.0" />
+		<Range value="3.0" />
+		<Type>Occultation</Type>
+		<Angles>116 292</Angles>
+		<Colors>
+			<color r="0" g="0" b="0"/>
+			<color r="1" g="0" b="0"/>
+		</Colors>
+		<DurationOfTurn value="7.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Port T</Name>
+		<Latitude value="47.388512" />
+		<Longitude value="-2.984454" />
+		<Height value="14.0" />
+		<Range value="7.0" />
+		<Type>Occultation</Type>
+		<Angles>116 292</Angles>
+		<Colors>
+			<color r="0" g="0" b="0"/>
+			<color r="0" g="1" b="0"/>
+		</Colors>
+		<DurationOfTurn value="7.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Argol</Name>
+		<Latitude value="47.344372" />
+		<Longitude value="-2.874720" />
+		<Height value="11.0" />
+		<Range value="6.0" />
+		<Type>Flash</Type>
+		<Angles>143 163 183 194</Angles>
+		<Colors>
+			<color r="1" g="1" b="1"/>
+			<color r="0" g="1" b="0"/>
+			<color r="1" g="1" b="1"/>
+			<color r="0" g="1" b="0"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Les grands cardinaux</Name>
+		<Latitude value="47.321220" />
+		<Longitude value="-2.834900" />
+		<Height value="28.0" />
+		<Range value="13.0" />
+		<Type>Flash</Type>
+		<Angles></Angles>
+		<Colors>
+			<color r="1" g="1" b="1"/>
+		</Colors>
+		<DurationOfTurn value="2.5" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Kerdonis</Name>
+		<Latitude value="47.310120" />
+		<Longitude value="-3.059580" />
+		<Height value="54.0" />
+		<Range value="15.0" />
+		<Type>Flash</Type>
+		<Angles>4 155 225 320</Angles>
+		<Colors>
+			<color r="0" g="0" b="0"/>
+			<color r="1" g="0" b="0"/>
+			<color r="0" g="0" b="0"/>
+			<color r="1" g="0" b="0"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Goulphar</Name>
+		<Latitude value="47.310841" />
+		<Longitude value="-3.227120" />
+		<Height value="87.0" />
+		<Range value="27.0" />
+		<Type>Flash</Type>
+		<Angles></Angles>
+		<Colors>
+			<color r="1" g="1" b="1"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Les poulains</Name>
+		<Latitude value="47.388626" />
+		<Longitude value="-3.251830" />
+		<Height value="34.0" />
+		<Range value="23.0" />
+		<Type>Flash</Type>
+		<Angles>23 291</Angles>
+		<Colors>
+			<color r="1" g="1" b="1"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Sauzon B</Name>
+		<Latitude value="47.374142" />
+		<Longitude value="-3.216642" />
+		<Height value="8.0" />
+		<Range value="4.0" />
+		<Type>Flash</Type>
+		<Angles>315 272</Angles>
+		<Colors>
+			<color r="1" g="0" b="0"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+	<Lighthouse>
+		<Name>Sauzon T</Name>
+		<Latitude value="47.374901" />
+		<Longitude value="-3.217370" />
+		<Height value="8.0" />
+		<Range value="4.0" />
+		<Type>Flash</Type>
+		<Angles>190 78</Angles>
+		<Colors>
+			<color r="0" g="1" b="0"/>
+		</Colors>
+		<DurationOfTurn value="5.0" />
+	</Lighthouse>
+</Lighthouses>

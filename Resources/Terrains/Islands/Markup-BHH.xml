@@ -1,0 +1,1071 @@
+<?xml version="1.0"?>
+<Marks>
+	<Mark>
+		<Name>Les Soeurs</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3523" />
+		<Longitude value="-2.91241" />
+	</Mark>
+	<Mark>
+		<Name>Er Spernec Bras</Name>
+		<Colour>6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="3" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3681" />
+		<Longitude value="-2.9205" />
+	</Mark>
+	<Mark>
+		<Name>Er Gurannic'h</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3418" />
+		<Longitude value="-2.84063" />
+	</Mark>
+	<Mark>
+		<Name>Er Palaire</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3359" />
+		<Longitude value="-2.91683" />
+	</Mark>
+	<Mark>
+		<Name>Bonen Bras</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4044" />
+		<Longitude value="-2.99797" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="3" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3297" />
+		<Longitude value="-2.87439" />
+	</Mark>
+	<Mark>
+		<Name>Madavoar</Name>
+		<Colour>6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="3" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3293" />
+		<Longitude value="-2.86054" />
+	</Mark>
+	<Mark>
+		<Name>Cohfournik</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3248" />
+		<Longitude value="-2.8282" />
+	</Mark>
+	<Mark>
+		<Name>Men Groise</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3795" />
+		<Longitude value="-2.91672" />
+	</Mark>
+	<Mark>
+		<Name>Men Lienienn</Name>
+		<Colour>2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="1" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3497" />
+		<Longitude value="-2.86827" />
+	</Mark>
+	<Mark>
+		<Name>Basse Carpaliée</Name>
+		<Colour>2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="1" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3943" />
+		<Longitude value="-2.95817" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.428" />
+		<Longitude value="-3.05079" />
+	</Mark>
+	<Mark>
+		<Name>En Dourell Du</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4256" />
+		<Longitude value="-3.04456" />
+	</Mark>
+	<Mark>
+		<Name>Le Rouleau</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3946" />
+		<Longitude value="-3.00512" />
+	</Mark>
+	<Mark>
+		<Name>Le Grand Coin</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4074" />
+		<Longitude value="-3.00431" />
+	</Mark>
+	<Mark>
+		<Name>La Truie</Name>
+		<Colour>2,6</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="1" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3254" />
+		<Longitude value="-3.1096" />
+	</Mark>
+	<Mark>
+		<Name>Er Rouzès</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3662" />
+		<Longitude value="-2.90723" />
+	</Mark>
+	<Mark>
+		<Name>Men er Houteliguet</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3757" />
+		<Longitude value="-2.93976" />
+	</Mark>
+	<Mark>
+		<Name>En Noh</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3277" />
+		<Longitude value="-2.88259" />
+	</Mark>
+	<Mark>
+		<Name>La Chèvre</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3514" />
+		<Longitude value="-2.87579" />
+	</Mark>
+	<Mark>
+		<Name>La Truie</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.2851" />
+		<Longitude value="-3.19583" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="20" />
+		<Mooring value="0" />
+		<Latitude value="47.3905" />
+		<Longitude value="-2.95608" />
+	</Mark>
+	<Mark>
+		<Name>Les Grands Cardinaux</Name>
+		<Colour>1,3</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3212" />
+		<Longitude value="-2.8349" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3409" />
+		<Longitude value="-2.87969" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="18" />
+		<Mooring value="0" />
+		<Latitude value="47.3901" />
+		<Longitude value="-2.95234" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="18" />
+		<Mooring value="0" />
+		<Latitude value="47.3866" />
+		<Longitude value="-2.95579" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>7</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3467" />
+		<Longitude value="-2.86934" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="14" />
+		<Mooring value="0" />
+		<Latitude value="47.3357" />
+		<Longitude value="-2.87485" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>7</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3433" />
+		<Longitude value="-2.8788" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="14" />
+		<Mooring value="0" />
+		<Latitude value="47.3407" />
+		<Longitude value="-2.88479" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="14" />
+		<Mooring value="0" />
+		<Latitude value="47.3398" />
+		<Longitude value="-2.86821" />
+	</Mark>
+	<Mark>
+		<Name>Pointe des Poulains</Name>
+		<Colour>1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3886" />
+		<Longitude value="-3.25179" />
+	</Mark>
+	<Mark>
+		<Name>Goulphar</Name>
+		<Colour>7</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3108" />
+		<Longitude value="-3.22712" />
+	</Mark>
+	<Mark>
+		<Name>Kerdonis</Name>
+		<Colour>1,3</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3101" />
+		<Longitude value="-3.05958" />
+	</Mark>
+	<Mark>
+		<Name>Bangor</Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="20" />
+		<Mooring value="0" />
+		<Latitude value="47.3148" />
+		<Longitude value="-3.18885" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="7" />
+		<Mooring value="0" />
+		<Latitude value="47.3426" />
+		<Longitude value="-3.15947" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.2946" />
+		<Longitude value="-3.2183" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.2945" />
+		<Longitude value="-3.2184" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="17" />
+		<Mooring value="0" />
+		<Latitude value="47.3627" />
+		<Longitude value="-3.15757" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="20" />
+		<Mooring value="0" />
+		<Latitude value="47.3711" />
+		<Longitude value="-3.22176" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3537" />
+		<Longitude value="-3.26028" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3128" />
+		<Longitude value="-3.06232" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>7</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="14" />
+		<Mooring value="0" />
+		<Latitude value="47.4" />
+		<Longitude value="-2.98977" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>7</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3412" />
+		<Longitude value="-2.8803" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3924" />
+		<Longitude value="-2.9636" />
+	</Mark>
+	<Mark>
+		<Name>Men Cren</Name>
+		<Colour>4</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3327" />
+		<Longitude value="-2.8719" />
+	</Mark>
+	<Mark>
+		<Name>Saint-Gildas</Name>
+		<Colour>4,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3928" />
+		<Longitude value="-2.95562" />
+	</Mark>
+	<Mark>
+		<Name>Argol</Name>
+		<Colour>4,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3444" />
+		<Longitude value="-2.87472" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>4,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.375" />
+		<Longitude value="-3.21734" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>3,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3742" />
+		<Longitude value="-3.21663" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>4,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3729" />
+		<Longitude value="-3.21874" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>4,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3473" />
+		<Longitude value="-3.15067" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>3,1</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.347" />
+		<Longitude value="-3.15123" />
+	</Mark>
+	<Mark>
+		<Name>Le Gareau</Name>
+		<Colour>4</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="3" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3796" />
+		<Longitude value="-3.2168" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>3</Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="1" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3329" />
+		<Longitude value="-2.87269" />
+	</Mark>
+	<Mark>
+		<Name>Les Poulains</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3908" />
+		<Longitude value="-3.27804" />
+	</Mark>
+	<Mark>
+		<Name>Goué Vas Sud</Name>
+		<Colour>6,2</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="3" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4295" />
+		<Longitude value="-3.08213" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>2,6</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="1" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4199" />
+		<Longitude value="-2.93925" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4181" />
+		<Longitude value="-2.93407" />
+	</Mark>
+	<Mark>
+		<Name>Recherche</Name>
+		<Colour>6,2,6</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="4" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4261" />
+		<Longitude value="-2.83979" />
+	</Mark>
+	<Mark>
+		<Name>Nord Poulains</Name>
+		<Colour>2,6</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="1" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3948" />
+		<Longitude value="-3.24805" />
+	</Mark>
+	<Mark>
+		<Name>Les Galères</Name>
+		<Colour>2,6,2</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="2" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3128" />
+		<Longitude value="-3.046" />
+	</Mark>
+	<Mark>
+		<Name>Le Chariot</Name>
+		<Colour>6,2</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="3" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3126" />
+		<Longitude value="-2.88245" />
+	</Mark>
+	<Mark>
+		<Name>Pot de Fer</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3614" />
+		<Longitude value="-2.9971" />
+	</Mark>
+	<Mark>
+		<Name>Men er Vag</Name>
+		<Colour>2,3,2</Colour>
+		<Boyshp value="5" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3567" />
+		<Longitude value="-2.93587" />
+	</Mark>
+	<Mark>
+		<Name>Basse du Milieu</Name>
+		<Colour>4</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.4318" />
+		<Longitude value="-3.06882" />
+	</Mark>
+	<Mark>
+		<Name>No2</Name>
+		<Colour>3</Colour>
+		<Boyshp value="2" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3452" />
+		<Longitude value="-3.14817" />
+	</Mark>
+	<Mark>
+		<Name>No4</Name>
+		<Colour>3</Colour>
+		<Boyshp value="2" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.3463" />
+		<Longitude value="-3.15017" />
+	</Mark>
+	<Mark>
+		<Name>No1</Name>
+		<Colour>4</Colour>
+		<Boyshp value="1" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.347" />
+		<Longitude value="-3.14933" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3479" />
+		<Longitude value="-3.15188" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3488" />
+		<Longitude value="-3.15" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3492" />
+		<Longitude value="-3.14883" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3487" />
+		<Longitude value="-3.1475" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3478" />
+		<Longitude value="-3.14883" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.347" />
+		<Longitude value="-3.14783" />
+	</Mark>
+	<Mark>
+		<Name>Réservé aux navires à passagers</Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.375" />
+		<Longitude value="-3.21484" />
+	</Mark>
+	<Mark>
+		<Name>Réservé aux navires à passagers</Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="7" />
+		<Latitude value="47.3745" />
+		<Longitude value="-3.2157" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.3483" />
+		<Longitude value="-3.15301" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.3484" />
+		<Longitude value="-3.15221" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.3482" />
+		<Longitude value="-3.15307" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.3484" />
+		<Longitude value="-3.15293" />
+	</Mark>
+	<Mark>
+		<Name>  </Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.3482" />
+		<Longitude value="-3.15201" />
+	</Mark>
+	<Mark>
+		<Name>P1</Name>
+		<Colour>4</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38654327" />
+		<Longitude value="-2.98108315" />
+	</Mark>
+	<Mark>
+		<Name>P2</Name>
+		<Colour>3</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38571930" />
+		<Longitude value="-2.98404956" />
+	</Mark>
+	<Mark>
+		<Name>P3</Name>
+		<Colour>4</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38376617" />
+		<Longitude value="-2.97867560" />
+	</Mark>
+	<Mark>
+		<Name>P4</Name>
+		<Colour>3</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38323212" />
+		<Longitude value="-2.98184466" />
+	</Mark>
+	<Mark>
+		<Name>P5</Name>
+		<Colour>4</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="2" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38090515" />
+		<Longitude value="-2.97924066" />
+	</Mark>
+	<Mark>
+		<Name>P6</Name>
+		<Colour>3</Colour>
+		<Boyshp value="4" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="1" />
+		<Landmark value="0" />
+		<Mooring value="0" />
+		<Latitude value="47.38123703" />
+		<Longitude value="-2.98351526" />
+	</Mark>
+	<Mark>
+		<Name>Coffre de Houat</Name>
+		<Colour></Colour>
+		<Boyshp value="0" />
+		<Bcnshp value="0" />
+		<Cardinal value="0" />
+		<Lateral value="0" />
+		<Landmark value="0" />
+		<Mooring value="1" />
+		<Latitude value="47.38162231" />
+		<Longitude value="-2.94097114" />
+	</Mark>
+</Marks>
