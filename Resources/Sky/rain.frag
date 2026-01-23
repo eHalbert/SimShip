@@ -21,9 +21,9 @@
 
 in vec2 TexCoord;
 
-uniform sampler2D   texColor; // Color texture
-uniform float       uTime;        // Time in second
-uniform vec2        screenSize;   // Size of the window in pixels
+uniform sampler2D   texColor;       // Color texture
+uniform float       uTime;          // Time in second
+uniform vec2        screenSize;     // Size of the window in pixels
 uniform bool        bBinoculars;
 uniform bool        bRainDropsTrails;
 uniform bool        bRainBlurDrips;
