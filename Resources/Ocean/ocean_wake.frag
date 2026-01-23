@@ -1,4 +1,5 @@
 #version 430
+precision highp float;
 
 #define ONE_OVER_4PI	0.0795774715459476
 
@@ -115,7 +116,7 @@ void main()
 
 	// No Fresnel effect if underwater
 	if (eyePos.y < 0.0) 
-	 F = 0.0;
+		F = 0.0;
 
 	// Reflection of the environment map (hdr texture)
 	vec3 reflection = 0.5 * texture(envmap, R).rgb;

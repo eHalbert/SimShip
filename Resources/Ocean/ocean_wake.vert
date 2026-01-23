@@ -1,4 +1,5 @@
 #version 430
+precision highp float;
 
 layout (location = 0) in vec3 aPosition;
 layout (location = 1) in vec2 aTexCoords;
@@ -26,8 +27,10 @@ out float       vFoamIntensity;
 out vec4        FragPosLightSpace;
 
 const float PI_2 = 1.57079632;
-const int kelvin_width_2 = 512;
-const int kelvin_height = 1024;
+const int kelvin_width_2 = 512; // independent of texture size
+const int kelvin_height = 1024; // independent of texture size
+const float foamFadeStart = 20.0;
+float foamFadeEnd = 100.0;
 
 void main()
 {
@@ -60,7 +63,7 @@ void main()
         {
             // Sample the grayscale value from the Kelvin wake texture array
             float kelvinGray = texture(kelvinArray, vec3(texX, texY, texLayer)).r;
-            
+
             // Convert grayscale value [0,1] to vertical offset: 0.5 → 0, 0 → -amplitude, 1 → +amplitude
             float kelvinYoffset = (kelvinGray - 0.5) * 2.0 * amplitude;
 
@@ -71,7 +74,7 @@ void main()
 
             // Apply the vertical offset to the vertex position and foam intensity
             posWorld.y += kelvinYoffset;
-            vFoamIntensity = kelvinYoffset;
+            vFoamIntensity = kelvinYoffset * (1.0 - texY);  // Less foam further from the ship
         }
     }
 
