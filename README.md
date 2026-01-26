@@ -48,6 +48,7 @@ Simulation of a ship moving on a cinematic-quality ocean.
 - 3D sounds (engines, seagulls, horn).
 - Terrain (islands).
 - Markup (buoys with lights).
+- Lighthouses with beamlights
 
 # Compilation
 
