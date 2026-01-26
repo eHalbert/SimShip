@@ -3,8 +3,6 @@ Simulation of a ship moving on a cinematic-quality ocean.
 
 (https://www.youtube.com/watch?v=g61SMdqNZc8)
 
-(https://sourceforge.net/projects/simship/files/SimShip-1.0_Setup.exe/download)
-
 **PHILOSOPHY**
 - No commercial or freeware 3D engine.
 - Simulation written in C++ with OpenGL, GLFW, Glad, GLM, Open Asset Import Library (assimp), libigl, ImGui, OpenAL, NanoVG, stb, Eigen, FFTW3, Pugixml, libnova, Clipper2.
